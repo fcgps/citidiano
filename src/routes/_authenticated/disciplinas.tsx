@@ -18,7 +18,7 @@ export const Route = createFileRoute("/_authenticated/disciplinas")({
 
 function SubjectDialog() {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(""); const [prof, setProf] = useState(""); const [color, setColor] = useState(SUBJECT_COLORS[0]);
+  const [name, setName] = useState(""); const [prof, setProf] = useState(""); const [color, setColor] = useState<string>(SUBJECT_COLORS[0]!);
   const ins = useInsert("subjects");
   return (
     <Dialog open={open} onOpenChange={setOpen}>

@@ -3,7 +3,7 @@ import { useUpdate, useRemove, type Goal, type Subject } from "@/lib/data";
 
 export function goalTarget(g: Goal) { return g.kind === "weekly" ? g.times_per_week ?? 1 : Number(g.target_hours ?? 1); }
 
-export function GoalCard({ g, subject }: { g: Goal; subject?: Subject }) {
+export function GoalCard({ g, subject }: { g: Goal; subject?: Subject | undefined }) {
   const up = useUpdate("goals"); const rm = useRemove("goals");
   const target = goalTarget(g); const done = Number(g.done);
   const pct = Math.min(100, (done / target) * 100);

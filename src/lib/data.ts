@@ -19,9 +19,9 @@ export function useTable<K extends TableName>(table: K) {
   return useQuery({
     queryKey: [table],
     queryFn: async () => {
-      const { data, error } = await supabase.from(table).select("*").order(orderBy[table]);
+      const { data, error } = await (supabase.from as any)(table).select("*").order(orderBy[table]);
       if (error) throw error;
-      return data as T[K]["Row"][];
+      return data as unknown as T[K]["Row"][];
     },
   });
 }
@@ -30,7 +30,7 @@ export function useInsert<K extends TableName>(table: K) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (row: T[K]["Insert"]) => {
-      const { error } = await supabase.from(table).insert(row as never);
+      const { error } = await (supabase.from as any)(table).insert(row as never);
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: [table] }); toast.success("Salvo!"); },
@@ -42,7 +42,7 @@ export function useUpdate<K extends TableName>(table: K) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...patch }: { id: string } & T[K]["Update"]) => {
-      const { error } = await supabase.from(table).update(patch as never).eq("id", id);
+      const { error } = await (supabase.from as any)(table).update(patch as never).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: [table] }),
@@ -54,7 +54,7 @@ export function useRemove(table: TableName) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from(table).delete().eq("id", id);
+      const { error } = await (supabase.from as any)(table).delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries(),
