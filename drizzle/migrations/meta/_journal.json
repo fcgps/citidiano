@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794795197457,
+      "tag": "0000_citidiano_schema",
+      "breakpoints": true
+    }
+  ]
+}
