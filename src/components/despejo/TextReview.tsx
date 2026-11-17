@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EVENT_KINDS, useTable, type Dump } from "@/lib/data";
 import { discardDump } from "@/components/despejo/Review";
-import { moveSuggestion, removeSuggestion, weekDates } from "@/lib/plan-cache";
+import { addSuggestion, moveSuggestion, removeSuggestion, weekDates } from "@/lib/plan-cache";
 
 // Ações que a IA pode propor a partir de um texto (ver interpretText em despejo.functions.ts)
 type Action =
@@ -18,7 +18,10 @@ type Action =
   | { type: "move_assessment"; label: string; assessment_id: string; date: string }
   | { type: "create_goal"; label: string; title: string; kind: string; times_per_week: number | null; target_hours: number | null; subject_id: string | null; deadline: string | null }
   | { type: "move_suggestion"; label: string; ref: string; date: string }
-  | { type: "remove_suggestion"; label: string; ref: string };
+  | { type: "remove_suggestion"; label: string; ref: string }
+  | { type: "add_suggestion"; label: string; date: string; title: string; suggestion_type: string; subject_id: string | null; note: string | null };
+
+const SUGGESTION_TYPES = ["estudo", "treino", "descanso", "citi", "outro"] as const;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^\d{2}:\d{2}$/;
@@ -50,6 +53,7 @@ export function TextReview({ dump }: { dump: Dump }) {
       case "create_goal": return !!a.title;
       case "move_suggestion": return !!suggestion(a.ref) && inPlanWeek(a.date);
       case "remove_suggestion": return !!suggestion(a.ref);
+      case "add_suggestion": return !!a.title && inPlanWeek(a.date) && subjOk(a.subject_id);
       default: return false;
     }
   };
@@ -90,6 +94,11 @@ export function TextReview({ dump }: { dump: Dump }) {
       case "remove_suggestion": {
         const s = suggestion(a.ref)!;
         if (!removeSuggestion(planWeekStart!, s)) throw new Error("Não achei essa sugestão no plano. Refaça o plano e tente de novo.");
+        return;
+      }
+      case "add_suggestion": {
+        const type = (SUGGESTION_TYPES as readonly string[]).includes(a.suggestion_type) ? (a.suggestion_type as (typeof SUGGESTION_TYPES)[number]) : "outro";
+        if (!addSuggestion(planWeekStart!, { date: a.date, title: a.title, type, subject_id: a.subject_id || null, note: a.note || null })) throw new Error("Não achei o plano dessa semana. Monte o plano e tente de novo.");
         return;
       }
       default:

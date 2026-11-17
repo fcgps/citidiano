@@ -65,6 +65,15 @@ export function removeSuggestion(week: string, from: { date: string; title: stri
   });
 }
 
+export function addSuggestion(week: string, item: { date: string; title: string; type: PlanItem["type"]; subject_id: string | null; note: string | null }) {
+  return update(week, (plan) => {
+    const day = plan.days.find((d) => d.date === item.date);
+    if (!day) return false;
+    day.items.push({ title: item.title.slice(0, 80), type: item.type, fixed: false, subject_id: item.subject_id, note: item.note, edited: true });
+    return true;
+  });
+}
+
 // Sugestões que o usuário ajustou: enviadas ao refazer o plano para serem mantidas
 export function editedSuggestions(week: string) {
   const c = readPlan(week);

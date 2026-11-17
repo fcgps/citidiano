@@ -194,6 +194,7 @@ Ações possíveis (cada uma com "label": frase curta descrevendo a ação, ex.:
 - {"type":"create_goal","label":string,"title":string,"kind":"weekly"|"hours","times_per_week":number|null,"target_hours":number|null,"subject_id":string|null,"deadline":"YYYY-MM-DD"|null}
 - {"type":"move_suggestion","label":string,"ref":string,"date":"YYYY-MM-DD"}   (mover uma sugestão do plano da semana para outro dia da mesma semana)
 - {"type":"remove_suggestion","label":string,"ref":string}
+- {"type":"add_suggestion","label":string,"date":"YYYY-MM-DD","title":string,"suggestion_type":"estudo"|"treino"|"descanso"|"citi"|"outro","subject_id":string|null,"note":string|null}   (nova sugestão no plano da semana, sem ir para o calendário)
 
 Regras:
 - Se o usuário falar de algo que está nas "Sugestões do plano da semana" (ex.: "muda a academia de quarta para quinta", "tira o estudo de sábado"), use move_suggestion/remove_suggestion com o ref da lista. NÃO crie evento no calendário para isso: continua sendo sugestão. Só crie eventos quando for um compromisso novo com dia definido.
@@ -226,6 +227,7 @@ export const interpretText = createServerFn({ method: "POST" })
     // Sugestões do plano da semana (vêm do navegador junto com a mensagem)
     const planInfo = (dump.result as any)?.plan as { week: string; items: { ref: string; date: string; title: string; type: string }[] } | undefined;
     const planItems = Array.isArray(planInfo?.items) ? planInfo!.items.slice(0, 40) : [];
+    const fromPlanBox = (dump.result as any)?.source === "plano"; // escrito na caixa de ajustes do plano
     const key = process.env["GEMINI_API_KEY"];
     if (!key) return fail("A chave da IA não está configurada.");
 
@@ -251,8 +253,11 @@ export const interpretText = createServerFn({ method: "POST" })
 
     let res: Response;
     try {
+      const hint = fromPlanBox && planInfo?.week
+        ? `\n\nIMPORTANTE: esta mensagem foi escrita na caixa "ajustar o plano da semana" (semana que começa em ${planInfo.week}). Ajustes de estudo, treino, descanso e rotina devem ser feitos no PLANO com move_suggestion, remove_suggestion e add_suggestion (datas dentro dessa semana), não no calendário. Só use ações de calendário se o usuário informar um compromisso real e novo (prova, entrega, reunião).`
+        : "";
       res = await callGemini(key, {
-        contents: [{ role: "user", parts: [{ text: textPrompt(text, ctx, nowLabel, today) }] }],
+        contents: [{ role: "user", parts: [{ text: textPrompt(text, ctx, nowLabel, today) + hint }] }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.3, thinkingConfig: { thinkingLevel: "low" } },
       }, 15_000);
     } catch (e) {

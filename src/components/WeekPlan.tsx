@@ -2,13 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { addDays, format, isBefore, isSameDay, parseISO, startOfDay, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Dumbbell, Loader2, Moon, Pencil, RotateCw, Sparkles, X } from "lucide-react";
+import { ArrowUp, ChevronLeft, ChevronRight, Dumbbell, Loader2, Moon, Pencil, RotateCw, Sparkles, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { TextReview } from "@/components/despejo/TextReview";
+import { discardDump } from "@/components/despejo/Review";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTable } from "@/lib/data";
-import { planWeek, type PlanItem } from "@/lib/despejo.functions";
+import { interpretText, planWeek, type PlanItem } from "@/lib/despejo.functions";
 // O plano fica guardado no navegador por semana; se a agenda mudar, oferecemos refazer.
-import { PLAN_EVENT, editedSuggestions, moveSuggestion, readPlan as readCache, removeSuggestion, writePlan as writeCache, type CachedPlan as Cached } from "@/lib/plan-cache";
+import { PLAN_EVENT, planSuggestions, editedSuggestions, moveSuggestion, readPlan as readCache, removeSuggestion, writePlan as writeCache, type CachedPlan as Cached } from "@/lib/plan-cache";
 
 const TYPE_LABEL: Record<PlanItem["type"], string> = { prova: "Prova", entrega: "Entrega", citi: "CITi", estudo: "Estudo", treino: "Treino", descanso: "Descanso", outro: "Compromisso" };
 const TYPE_COLOR: Partial<Record<PlanItem["type"], string>> = { citi: "#66CC00", treino: "#FF7A1A", descanso: "#94A3B8" };
@@ -209,8 +214,88 @@ export function WeekPlan() {
             <span>Horários ainda não definidos — por enquanto, o plano mostra o que fazer em cada dia.</span>
             {cached && <span className="ml-auto">Gerado {format(parseISO(cached.at), "dd/MM 'às' HH:mm")}</span>}
           </div>
+          <PlanTweak week={week} />
         </div>
       )}
     </section>
+  );
+}
+
+// Caixa logo abaixo do quadro para pedir mudanças no plano em texto livre.
+// Usa a mesma IA dos comandos do Despejo, avisando que o pedido é sobre o plano:
+// estudo/treino/descanso mudam só no plano (continuam sugestões).
+const TWEAK_EXAMPLES = ["Não quero estudar no sábado", "Coloca mais um estudo de Cálculo na quinta", "Troca a academia de quarta para quinta"];
+
+function PlanTweak({ week }: { week: string }) {
+  const qc = useQueryClient();
+  const interpret = useServerFn(interpretText);
+  const { data: dumps = [] } = useTable("dumps");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [dumpId, setDumpId] = useState<string | null>(null);
+  const runId = useRef(0);
+  const dump = dumpId ? dumps.find((d) => d.id === dumpId) : undefined;
+
+  async function send() {
+    const t = text.trim();
+    if (!t || busy) return;
+    const my = ++runId.current;
+    setBusy(true);
+    setDumpId(null);
+    try {
+      const plan = { week, items: planSuggestions(week) };
+      const { data: row, error } = await supabase.from("dumps").insert({ path: "", file_name: t.slice(0, 200), doc_type: "texto", result: { text: t.slice(0, 1000), plan, source: "plano" } }).select("id").single();
+      if (error || !row) throw new Error("Não consegui registrar seu pedido.");
+      if (runId.current !== my) { await discardDump({ id: row.id, path: "" }, qc, "Cancelado"); return; }
+      setDumpId(row.id);
+      const r = await interpret({ data: { id: row.id } });
+      if (runId.current !== my) return;
+      await qc.invalidateQueries({ queryKey: ["dumps"] });
+      if (!r.ok) toast.error(r.error); else setText("");
+    } catch (e) {
+      if (runId.current === my) toast.error(e instanceof Error ? e.message : "Algo deu errado. Tente de novo.");
+    } finally {
+      if (runId.current === my) setBusy(false);
+    }
+  }
+
+  async function cancel() {
+    runId.current++;
+    setBusy(false);
+    if (dumpId) await discardDump({ id: dumpId, path: "" }, qc, "Cancelado");
+    setDumpId(null);
+  }
+
+  return (
+    <div className="mt-6 rounded-3xl border bg-background/80 p-4 md:p-5">
+      <p className="eyebrow mb-2">Quer mudar algo no plano?</p>
+      <form onSubmit={(e) => { e.preventDefault(); send(); }} className="flex items-end gap-2 rounded-2xl border bg-background p-2 focus-within:ring-2 focus-within:ring-ring">
+        <textarea
+          rows={1}
+          maxLength={1000}
+          value={text}
+          disabled={busy}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder="Ex.: não quero estudar no sábado"
+          className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none disabled:opacity-60"
+        />
+        {busy ? (
+          <Button type="button" variant="ghost" size="sm" className="shrink-0 rounded-full" onClick={cancel}><X className="mr-1 h-4 w-4" />Cancelar</Button>
+        ) : (
+          <Button type="submit" size="icon" className="shrink-0 rounded-full" disabled={!text.trim()} aria-label="Enviar"><ArrowUp className="h-4 w-4" /></Button>
+        )}
+      </form>
+      {busy && <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin text-primary-deep" />Ajustando seu plano…</p>}
+      {!busy && !dump && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {TWEAK_EXAMPLES.map((ex) => <button key={ex} type="button" onClick={() => setText(ex)} className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground hover:border-primary hover:text-primary-deep">{ex}</button>)}
+        </div>
+      )}
+      {!busy && dump?.status === "review" && (
+        <div className="mt-4"><TextReview dump={dump} /></div>
+      )}
+      {!busy && dump?.status === "error" && <p className="mt-3 text-sm text-destructive">{dump.error}</p>}
+    </div>
   );
 }
