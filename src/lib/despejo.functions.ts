@@ -7,27 +7,42 @@ const FALLBACK_MODEL = "gemini-3.5-flash-lite";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Chama o Gemini tentando de novo sozinho quando o Google está instável.
-// 429/500/503 → espera e tenta de novo; se continuar, tenta o modelo reserva.
+// Chama o Gemini tentando de novo sozinho quando o Google está instável, sem
+// deixar o usuário esperando demais: cada tentativa tem no máximo 25 s e o total
+// fica em torno de 45 s. 429/500/503 ou demora → tenta de novo; depois, o modelo reserva.
+const ATTEMPT_MS = 25_000;
+const TOTAL_MS = 45_000;
+
 async function callGemini(key: string, body: unknown): Promise<Response> {
-  const attempt = (model: string) =>
-    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify(body),
-    });
-  const transient = (r: Response) => r.status === 429 || r.status === 500 || r.status === 503;
+  const started = Date.now();
+  const timeout = () => new Response(JSON.stringify({ error: "timeout" }), { status: 504 });
+  const attempt = async (model: string) => {
+    const left = TOTAL_MS - (Date.now() - started);
+    if (left < 3_000) return timeout();
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), Math.min(ATTEMPT_MS, left));
+    try {
+      return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      if (ctrl.signal.aborted) return timeout();
+      throw e;
+    } finally {
+      clearTimeout(t);
+    }
+  };
+  const transient = (r: Response) => [429, 500, 503, 504].includes(r.status);
   let res = await attempt(MODEL);
-  for (const wait of [1500, 4000]) {
-    if (!transient(res)) return res;
-    await sleep(wait);
-    res = await attempt(MODEL);
-  }
-  if (res.status === 500 || res.status === 503) {
-    const alt = await attempt(FALLBACK_MODEL);
-    if (alt.ok || alt.status !== 404) return alt;
-  }
-  return res;
+  if (!transient(res)) return res;
+  await sleep(1500);
+  res = await attempt(MODEL);
+  if (!transient(res) || res.status === 429) return res;
+  const alt = await attempt(FALLBACK_MODEL);
+  return alt.ok || alt.status !== 404 ? alt : res;
 }
 
 function toBase64(buf: ArrayBuffer) {
@@ -118,6 +133,7 @@ export const analyzeDump = createServerFn({ method: "POST" })
     if (!res.ok) {
       console.error("Gemini", res.status, await res.text());
       if (res.status === 429 || res.status === 503) return fail("A IA do Google está sobrecarregada agora. Tente de novo em um minuto.");
+      if (res.status === 504) return fail("A IA demorou demais para responder. Tente de novo em instantes.");
       if (res.status === 400) return fail("A IA não conseguiu ler este arquivo. Ele pode estar corrompido ou ser grande demais.");
       if (res.status === 403 || res.status === 401) return fail("A chave da IA foi recusada. Verifique a chave do Gemini.");
       return fail(`A IA teve um problema ao analisar o arquivo (erro ${res.status}). Tente de novo.`);
@@ -235,6 +251,7 @@ export const interpretText = createServerFn({ method: "POST" })
     if (!res.ok) {
       console.error("Gemini", res.status, await res.text());
       if (res.status === 429 || res.status === 503) return fail("A IA do Google está sobrecarregada agora. Tente de novo em um minuto.");
+      if (res.status === 504) return fail("A IA demorou demais para responder. Tente de novo em instantes.");
       if (res.status === 403 || res.status === 401) return fail("A chave da IA foi recusada. Verifique a chave do Gemini.");
       return fail(`A IA teve um problema ao entender sua mensagem (erro ${res.status}). Tente de novo.`);
     }

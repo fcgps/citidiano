@@ -59,8 +59,10 @@ function HistoryRow({ d }: { d: Dump }) {
     if (!r.ok) toast.error(r.error);
     qc.invalidateQueries({ queryKey: ["dumps"] });
   }
-  const icon = d.status === "analyzing" ? <Loader2 className="h-4 w-4 animate-spin text-primary-deep" /> : d.status === "error" ? <AlertCircle className="h-4 w-4 text-destructive" /> : d.doc_type === "texto" ? <MessageSquare className="h-4 w-4 text-primary-deep" /> : d.doc_type === "cronograma" ? <CalendarCheck className="h-4 w-4 text-primary-deep" /> : <FileText className="h-4 w-4 text-primary-deep" />;
-  const text = d.status === "analyzing" ? "Analisando…" : d.status === "error" ? d.error : d.summary ?? d.status;
+  // Item que ficou "analisando" por mais de 3 min provavelmente travou (ex.: página fechada no meio)
+  const stuck = d.status === "analyzing" && Date.now() - new Date(d.created_at).getTime() > 180_000;
+  const icon = stuck ? <AlertCircle className="h-4 w-4 text-amber-600" /> : d.status === "analyzing" ? <Loader2 className="h-4 w-4 animate-spin text-primary-deep" /> : d.status === "error" ? <AlertCircle className="h-4 w-4 text-destructive" /> : d.doc_type === "texto" ? <MessageSquare className="h-4 w-4 text-primary-deep" /> : d.doc_type === "cronograma" ? <CalendarCheck className="h-4 w-4 text-primary-deep" /> : <FileText className="h-4 w-4 text-primary-deep" />;
+  const text = stuck ? "Parece que a análise travou. Tente de novo ou remova." : d.status === "analyzing" ? "Analisando…" : d.status === "error" ? d.error : d.summary ?? d.status;
   return (
     <li className="flex items-center gap-4 p-4">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent">{icon}</div>
@@ -68,8 +70,8 @@ function HistoryRow({ d }: { d: Dump }) {
         <div className="truncate text-sm font-semibold">{d.doc_type === "texto" ? `“${d.file_name}”` : d.file_name}</div>
         <div className={d.status === "error" ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>{text}</div>
       </div>
-      {d.status === "error" && d.doc_type !== "desconhecido" && <button onClick={retry} className="flex items-center gap-1 text-xs font-semibold text-primary-deep"><RotateCw className="h-3.5 w-3.5" />Tentar de novo</button>}
-      {d.status === "error" && <button onClick={() => discardDump(d, qc)} className="text-xs text-muted-foreground hover:text-foreground">Remover</button>}
+      {(d.status === "error" || stuck) && d.doc_type !== "desconhecido" && <button onClick={retry} className="flex items-center gap-1 text-xs font-semibold text-primary-deep"><RotateCw className="h-3.5 w-3.5" />Tentar de novo</button>}
+      {(d.status === "error" || stuck) && <button onClick={() => discardDump(d, qc)} className="text-xs text-muted-foreground hover:text-foreground">Remover</button>}
       <span className="hidden font-mono text-[10px] uppercase text-muted-foreground sm:block">{formatDistanceToNow(new Date(d.created_at), { locale: ptBR, addSuffix: true })}</span>
     </li>
   );
