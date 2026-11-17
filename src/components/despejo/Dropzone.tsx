@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowUp, Sparkles, UploadCloud } from "lucide-react";
+import { ArrowUp, Sparkles, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { analyzeDump, interpretText } from "@/lib/despejo.functions";
+import { discardDump } from "@/components/despejo/Review";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,20 @@ export function Dropzone({ compact = false, onDone }: { compact?: boolean; onDon
   const interpret = useServerFn(interpretText);
   const [text, setText] = useState("");
   const [textMode, setTextMode] = useState(false);
+  // Item em análise agora (para poder cancelar) e se o usuário cancelou
+  const current = useRef<{ id: string; path: string } | null>(null);
+  // Cada envio ganha um número; cancelar "invalida" o envio atual, e o resultado dele é ignorado
+  const runId = useRef(0);
+
+  async function cancel() {
+    runId.current++;
+    const c = current.current;
+    current.current = null;
+    setBusy(null);
+    setTextMode(false);
+    if (c) await discardDump(c, qc, "Cancelado");
+    toast("Análise cancelada.");
+  }
 
   useEffect(() => {
     if (!busy) return;
@@ -36,18 +51,22 @@ export function Dropzone({ compact = false, onDone }: { compact?: boolean; onDon
     if (!t || busy) return;
     setTextMode(true);
     setBusy(t.length > 60 ? `${t.slice(0, 60)}…` : t);
+    const my = ++runId.current;
+    current.current = null;
     try {
       const { data: row, error } = await supabase.from("dumps").insert({ path: "", file_name: t.slice(0, 200), doc_type: "texto", result: { text: t.slice(0, 1000) } }).select("id").single();
       if (error || !row) throw new Error("Não consegui registrar sua mensagem.");
+      if (runId.current !== my) { await discardDump({ id: row.id, path: "" }, qc, "Cancelado"); return; }
+      current.current = { id: row.id, path: "" };
       qc.invalidateQueries({ queryKey: ["dumps"] });
       const r = await interpret({ data: { id: row.id } });
+      if (runId.current !== my) return;
       if (!r.ok) toast.error(r.error); else { toast.success("A IA respondeu! Confira a sugestão."); setText(""); }
       onDone?.();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Algo deu errado. Tente de novo.");
+      if (runId.current === my) toast.error(e instanceof Error ? e.message : "Algo deu errado. Tente de novo.");
     } finally {
-      setBusy(null);
-      setTextMode(false);
+      if (runId.current === my) { current.current = null; setBusy(null); setTextMode(false); }
       qc.invalidateQueries({ queryKey: ["dumps"] });
     }
   }
@@ -58,6 +77,8 @@ export function Dropzone({ compact = false, onDone }: { compact?: boolean; onDon
     if (!OK_TYPES.includes(f.type)) { toast.error("Envie um PDF ou uma imagem (PNG, JPG, WEBP)."); return; }
     if (f.size > 15e6) { toast.error("Arquivo grande demais — o máximo é 15 MB."); return; }
     setBusy(f.name);
+    const my = ++runId.current;
+    current.current = null;
     try {
       const { data: u } = await supabase.auth.getUser();
       const path = `${u.user!.id}/${crypto.randomUUID()}-${f.name.replace(/[^\w.\-]/g, "_")}`;
@@ -65,14 +86,17 @@ export function Dropzone({ compact = false, onDone }: { compact?: boolean; onDon
       if (up.error) throw new Error("Não consegui salvar o arquivo. Tente de novo.");
       const { data: row, error } = await supabase.from("dumps").insert({ path, file_name: f.name.slice(0, 200), mime: f.type, size: f.size }).select("id").single();
       if (error || !row) throw new Error("Não consegui registrar o arquivo.");
+      if (runId.current !== my) { await discardDump({ id: row.id, path }, qc, "Cancelado"); return; }
+      current.current = { id: row.id, path };
       qc.invalidateQueries({ queryKey: ["dumps"] });
       const r = await analyze({ data: { id: row.id } });
+      if (runId.current !== my) return;
       if (!r.ok) toast.error(r.error); else toast.success("Pronto! Revise o que a IA encontrou.");
       onDone?.();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Algo deu errado. Tente de novo.");
+      if (runId.current === my) toast.error(e instanceof Error ? e.message : "Algo deu errado. Tente de novo.");
     } finally {
-      setBusy(null);
+      if (runId.current === my) { current.current = null; setBusy(null); }
       if (input.current) input.current.value = "";
       qc.invalidateQueries({ queryKey: ["dumps"] });
     }
@@ -94,6 +118,7 @@ export function Dropzone({ compact = false, onDone }: { compact?: boolean; onDon
               <p className="mt-4 text-xl font-semibold">{textMode ? TEXT_STEPS[Math.min(step, TEXT_STEPS.length - 1)] : STEPS[step]}</p>
               <p className="mt-1 truncate text-sm text-muted-foreground">{busy}</p>
               <div className="mx-auto mt-5 h-1.5 max-w-xs overflow-hidden rounded-full bg-muted"><div className="h-full bg-gradient-primary transition-all duration-700" style={{ width: `${((step + 1) / (textMode ? TEXT_STEPS.length : STEPS.length)) * 100}%` }} /></div>
+              <Button variant="ghost" size="sm" className="mt-4 rounded-full text-muted-foreground" onClick={cancel}><X className="mr-1 h-4 w-4" />Cancelar</Button>
             </>
           ) : (
             <>

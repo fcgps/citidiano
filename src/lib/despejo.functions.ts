@@ -7,6 +7,8 @@ const FALLBACK_MODEL = "gemini-3.5-flash-lite";
 // thinkingLevel "low": a IA "pensa" menos antes de responder → respostas bem mais rápidas.
 // (O padrão do 3.5 Flash é "medium", que pode demorar demais para um planejador.)
 
+// As atualizações de status abaixo usam .eq("status", "analyzing"): se o usuário
+// cancelou a análise no meio, o resultado da IA é simplesmente ignorado.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Chama o Gemini tentando de novo sozinho quando o Google está instável, sem
@@ -98,7 +100,7 @@ export const analyzeDump = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const sb = context.supabase;
     const fail = async (msg: string) => {
-      await sb.from("dumps").update({ status: "error", error: msg }).eq("id", data.id);
+      await sb.from("dumps").update({ status: "error", error: msg }).eq("id", data.id).eq("status", "analyzing");
       return { ok: false as const, error: msg };
     };
     const { data: dump } = await sb.from("dumps").select("*").eq("id", data.id).single();
@@ -145,10 +147,10 @@ export const analyzeDump = createServerFn({ method: "POST" })
     let parsed: any;
     try { parsed = JSON.parse(text.replace(/^```json\s*|```$/g, "")); } catch { return fail("A IA respondeu de um jeito inesperado. Tente de novo."); }
     if (parsed?.type === "desconhecido" || !["cronograma", "material"].includes(parsed?.type)) {
-      await sb.from("dumps").update({ status: "error", doc_type: "desconhecido", result: parsed, error: "Não parece um cronograma nem material de estudo." }).eq("id", data.id);
+      await sb.from("dumps").update({ status: "error", doc_type: "desconhecido", result: parsed, error: "Não parece um cronograma nem material de estudo." }).eq("id", data.id).eq("status", "analyzing");
       return { ok: false as const, error: "Não parece um cronograma nem material de estudo." };
     }
-    await sb.from("dumps").update({ status: "review", doc_type: parsed.type, result: parsed, error: null }).eq("id", data.id);
+    await sb.from("dumps").update({ status: "review", doc_type: parsed.type, result: parsed, error: null }).eq("id", data.id).eq("status", "analyzing");
     return { ok: true as const };
   });
 
@@ -215,7 +217,7 @@ export const interpretText = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const sb = context.supabase;
     const fail = async (msg: string) => {
-      await sb.from("dumps").update({ status: "error", error: msg }).eq("id", data.id);
+      await sb.from("dumps").update({ status: "error", error: msg }).eq("id", data.id).eq("status", "analyzing");
       return { ok: false as const, error: msg };
     };
     const { data: dump } = await sb.from("dumps").select("*").eq("id", data.id).single();
@@ -265,6 +267,6 @@ export const interpretText = createServerFn({ method: "POST" })
     let parsed: any;
     try { parsed = JSON.parse(out.replace(/^```json\s*|```$/g, "")); } catch { return fail("A IA respondeu de um jeito inesperado. Tente de novo."); }
     const actions = Array.isArray(parsed?.actions) ? parsed.actions.slice(0, 8) : [];
-    await sb.from("dumps").update({ status: "review", doc_type: "texto", result: { text, reply: String(parsed?.reply ?? ""), actions }, error: null }).eq("id", data.id);
+    await sb.from("dumps").update({ status: "review", doc_type: "texto", result: { text, reply: String(parsed?.reply ?? ""), actions }, error: null }).eq("id", data.id).eq("status", "analyzing");
     return { ok: true as const };
   });

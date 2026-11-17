@@ -21,9 +21,9 @@ async function finish(id: string, summary: string, qc: ReturnType<typeof useQuer
   toast.success(summary);
 }
 
-export async function discardDump(d: Dump, qc: ReturnType<typeof useQueryClient>) {
+export async function discardDump(d: Pick<Dump, "id" | "path">, qc: ReturnType<typeof useQueryClient>, summary = "Descartado") {
   if (d.path) await supabase.storage.from("materiais").remove([d.path]);
-  await supabase.from("dumps").update({ status: "discarded", summary: "Descartado" }).eq("id", d.id);
+  await supabase.from("dumps").update({ status: "discarded", summary }).eq("id", d.id);
   qc.invalidateQueries({ queryKey: ["dumps"] });
 }
 

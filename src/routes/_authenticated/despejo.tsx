@@ -71,6 +71,7 @@ function HistoryRow({ d }: { d: Dump }) {
         <div className={d.status === "error" ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>{text}</div>
       </div>
       {(d.status === "error" || stuck) && d.doc_type !== "desconhecido" && <button onClick={retry} className="flex items-center gap-1 text-xs font-semibold text-primary-deep"><RotateCw className="h-3.5 w-3.5" />Tentar de novo</button>}
+      {d.status === "analyzing" && !stuck && <button onClick={() => discardDump(d, qc, "Cancelado")} className="text-xs text-muted-foreground hover:text-foreground">Cancelar</button>}
       {(d.status === "error" || stuck) && <button onClick={() => discardDump(d, qc)} className="text-xs text-muted-foreground hover:text-foreground">Remover</button>}
       <span className="hidden font-mono text-[10px] uppercase text-muted-foreground sm:block">{formatDistanceToNow(new Date(d.created_at), { locale: ptBR, addSuffix: true })}</span>
     </li>
