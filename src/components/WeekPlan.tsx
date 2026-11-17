@@ -1,0 +1,201 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { addDays, format, isBefore, isSameDay, parseISO, startOfDay, startOfWeek } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { ChevronLeft, ChevronRight, Dumbbell, Loader2, Moon, RotateCw, Sparkles } from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { useTable } from "@/lib/data";
+import { planWeek, type PlanItem, type WeekPlan as Plan } from "@/lib/despejo.functions";
+
+// O plano fica guardado no navegador por semana; se a agenda mudar, oferecemos refazer.
+const CACHE_KEY = (week: string) => `citidiano.plano.${week}`;
+type Cached = { plan: Plan; sig: string; at: string };
+
+const readCache = (week: string): Cached | null => {
+  try { const raw = localStorage.getItem(CACHE_KEY(week)); return raw ? JSON.parse(raw) : null; } catch { return null; }
+};
+const writeCache = (week: string, c: Cached) => {
+  try { localStorage.setItem(CACHE_KEY(week), JSON.stringify(c)); } catch { /* sem localStorage: segue sem cache */ }
+};
+
+const TYPE_LABEL: Record<PlanItem["type"], string> = { prova: "Prova", entrega: "Entrega", citi: "CITi", estudo: "Estudo", treino: "Treino", descanso: "Descanso", outro: "Compromisso" };
+const TYPE_COLOR: Partial<Record<PlanItem["type"], string>> = { citi: "#66CC00", treino: "#FF7A1A", descanso: "#94A3B8" };
+const LOAD: Record<string, { label: string; cls: string }> = {
+  leve: { label: "Leve", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+  media: { label: "Média", cls: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  pesada: { label: "Pesada", cls: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300" },
+};
+
+export function WeekPlan() {
+  const generate = useServerFn(planWeek);
+  const { data: subjects = [] } = useTable("subjects");
+  const { data: assessments = [], isSuccess: aOk } = useTable("assessments");
+  const { data: events = [], isSuccess: eOk } = useTable("events");
+  const { data: goals = [], isSuccess: gOk } = useTable("goals");
+  const loaded = aOk && eOk && gOk;
+
+  const today = startOfDay(new Date());
+  const [offset, setOffset] = useState(0); // 0 = esta semana, 1 = próxima
+  const weekStart = addDays(startOfWeek(today, { weekStartsOn: 1 }), offset * 7);
+  const week = format(weekStart, "yyyy-MM-dd");
+
+  // "Assinatura" da agenda da semana: se mudar, o plano salvo está desatualizado
+  const sig = useMemo(() => {
+    const end = addDays(weekStart, 21);
+    const inRange = (d: Date) => d >= weekStart && d <= end;
+    return [
+      ...assessments.filter((a) => inRange(parseISO(a.date))).map((a) => `${a.id}${a.date}${a.name}`),
+      ...events.filter((e) => inRange(parseISO(e.starts_at))).map((e) => `${e.id}${e.starts_at}${e.title}`),
+      ...goals.map((g) => `${g.id}${g.times_per_week}${g.target_hours}`),
+    ].sort().join("|");
+  }, [assessments, events, goals, week]);
+
+  const [cached, setCached] = useState<Cached | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const autoTried = useRef<Set<string>>(new Set());
+  const weekRef = useRef(week);
+  weekRef.current = week;
+
+  async function run() {
+    if (busy) return;
+    const w = week; // a semana pode mudar enquanto a IA responde
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await generate({ data: { weekStart: w } });
+      if (!r.ok) { if (weekRef.current === w) { setError(r.error); toast.error(r.error); } return; }
+      const c = { plan: r.plan, sig, at: new Date().toISOString() };
+      writeCache(w, c);
+      if (weekRef.current === w) setCached(c);
+    } catch {
+      setError("Não consegui montar o plano agora.");
+    } finally { setBusy(false); }
+  }
+
+  // Ao abrir (ou trocar de semana): usa o plano salvo; se não houver, gera um automaticamente uma vez
+  useEffect(() => {
+    if (!loaded) return;
+    const c = readCache(week);
+    setCached(c);
+    setError(null);
+    if (!c && !autoTried.current.has(week)) { autoTried.current.add(week); run(); }
+  }, [loaded, week]);
+
+  const plan = cached?.plan;
+  const outdated = !!cached && cached.sig !== sig;
+  const subj = (id: string | null) => subjects.find((s) => s.id === id);
+  const colorOf = (it: PlanItem) => TYPE_COLOR[it.type] ?? subj(it.subject_id)?.color ?? "#0F5132";
+
+  return (
+    <section className="mb-14">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary-deep" /><p className="eyebrow">Plano da semana · feito pela IA</p></div>
+          <h2 className="mt-2 text-2xl font-light md:text-3xl">
+            {offset === 0 ? "Esta semana" : "Próxima semana"}{" "}
+            <strong className="font-bold">{format(weekStart, "d MMM", { locale: ptBR })} – {format(addDays(weekStart, 6), "d MMM", { locale: ptBR })}</strong>
+          </h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setOffset(0)} disabled={offset === 0} className="rounded-full border p-2 disabled:opacity-30" aria-label="Esta semana"><ChevronLeft className="h-4 w-4" /></button>
+          <button onClick={() => setOffset(1)} disabled={offset === 1} className="rounded-full border p-2 disabled:opacity-30" aria-label="Próxima semana"><ChevronRight className="h-4 w-4" /></button>
+          <button onClick={run} disabled={busy || !loaded} className="flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold disabled:opacity-50">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}{plan ? "Refazer plano" : "Montar plano"}
+          </button>
+        </div>
+      </div>
+
+      {outdated && !busy && (
+        <button onClick={run} className="mb-4 w-full rounded-2xl border border-amber-300 bg-amber-50/70 p-3 text-left text-sm dark:bg-amber-950/30">
+          <strong>Sua agenda mudou</strong> desde que este plano foi feito. <span className="font-semibold text-primary-deep">Refazer agora →</span>
+        </button>
+      )}
+
+      {busy && !plan && (
+        <div className="flex items-center justify-center gap-3 rounded-3xl border border-dashed p-12 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin text-primary-deep" /> Olhando suas provas, entregas e metas para montar a semana…
+        </div>
+      )}
+      {!busy && !plan && error && (
+        <div className="rounded-3xl border border-dashed p-8 text-center text-sm text-muted-foreground">{error} <button onClick={run} className="font-semibold text-primary-deep">Tentar de novo</button></div>
+      )}
+
+      {plan && (
+        <div className={cn("transition-opacity", busy && "opacity-50")}>
+          {(plan.headline || plan.recommendations.length > 0) && (
+            <div className="mb-5 rounded-3xl bg-gradient-primary p-[1px] shadow-glow">
+              <div className="rounded-[calc(1.5rem-1px)] bg-background p-5 md:p-6">
+                {plan.headline && <p className="text-lg font-semibold">{plan.headline}</p>}
+                {plan.recommendations.length > 0 && (
+                  <ul className="mt-4 grid gap-4 md:grid-cols-2">
+                    {plan.recommendations.map((r, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="font-mono text-xs text-primary-deep">0{i + 1}</span>
+                        <div><div className="font-semibold">{r.title}</div><p className="text-sm text-muted-foreground">{r.reason}</p></div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Quadro da semana, no estilo de uma planilha de rotina: uma coluna por dia */}
+          <div className="overflow-x-auto rounded-3xl border">
+            <div className="grid min-w-[880px] grid-cols-7">
+              {plan.days.map((d) => {
+                const date = parseISO(d.date);
+                const isToday = isSameDay(date, today);
+                const past = isBefore(date, today);
+                const load = LOAD[d.load] ?? LOAD.media!;
+                return (
+                  <div key={d.date} className={cn("flex min-h-56 flex-col border-r last:border-r-0", isToday && "bg-accent/40", past && "opacity-50")}>
+                    <div className={cn("border-b p-3", isToday && "border-primary")}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{format(date, "EEEE", { locale: ptBR }).split("-")[0]}</span>
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", load.cls)}>{load.label}</span>
+                      </div>
+                      <div className={cn("text-xl font-bold", isToday && "text-primary-deep")}>{format(date, "d/MM")}</div>
+                    </div>
+                    <div className="flex flex-1 flex-col gap-2 p-2">
+                      {d.items.length === 0 && <p className="p-2 text-xs italic text-muted-foreground">{past ? "—" : "Livre"}</p>}
+                      {d.items.map((it, i) => {
+                        const color = colorOf(it);
+                        const s = subj(it.subject_id);
+                        return it.fixed ? (
+                          <div key={i} className="rounded-xl p-2.5 text-xs text-white shadow-sm" style={{ background: color }} title={it.note ?? undefined}>
+                            <div className="font-mono text-[9px] uppercase tracking-widest opacity-80">{TYPE_LABEL[it.type]}</div>
+                            <div className="font-semibold leading-snug">{it.title}</div>
+                            {it.note && <div className="mt-1 opacity-90">{it.note}</div>}
+                          </div>
+                        ) : (
+                          <div key={i} className="rounded-xl border border-dashed bg-background p-2.5 text-xs" style={{ borderColor: color, boxShadow: `inset 3px 0 0 ${color}` }}>
+                            <div className="flex items-center gap-1 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
+                              {it.type === "treino" ? <Dumbbell className="h-3 w-3" /> : it.type === "descanso" ? <Moon className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+                              Sugestão · {TYPE_LABEL[it.type]}
+                            </div>
+                            <div className="font-semibold leading-snug">{it.title}</div>
+                            {s && it.type === "estudo" && <div className="text-[10px] text-muted-foreground">{s.name}</div>}
+                            {it.note && <div className="mt-1 text-muted-foreground">{it.note}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded bg-primary-deep" /> Compromisso fixo</span>
+            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded border border-dashed border-primary" /> Sugestão da IA</span>
+            <span>Horários ainda não definidos — por enquanto, o plano mostra o que fazer em cada dia.</span>
+            {cached && <span className="ml-auto">Gerado {format(parseISO(cached.at), "dd/MM 'às' HH:mm")}</span>}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
