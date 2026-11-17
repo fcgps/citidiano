@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EVENT_KINDS, useTable, type Dump } from "@/lib/data";
 import { discardDump } from "@/components/despejo/Review";
+import { moveSuggestion, removeSuggestion, weekDates } from "@/lib/plan-cache";
 
 // Ações que a IA pode propor a partir de um texto (ver interpretText em despejo.functions.ts)
 type Action =
@@ -15,7 +16,9 @@ type Action =
   | { type: "delete_event"; label: string; event_id: string }
   | { type: "create_assessment"; label: string; subject_id: string; name: string; date: string; kind: string; topics: string | null }
   | { type: "move_assessment"; label: string; assessment_id: string; date: string }
-  | { type: "create_goal"; label: string; title: string; kind: string; times_per_week: number | null; target_hours: number | null; subject_id: string | null; deadline: string | null };
+  | { type: "create_goal"; label: string; title: string; kind: string; times_per_week: number | null; target_hours: number | null; subject_id: string | null; deadline: string | null }
+  | { type: "move_suggestion"; label: string; ref: string; date: string }
+  | { type: "remove_suggestion"; label: string; ref: string };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^\d{2}:\d{2}$/;
@@ -29,6 +32,11 @@ export function TextReview({ dump }: { dump: Dump }) {
   const { data: events = [] } = useTable("events");
   const { data: assessments = [] } = useTable("assessments");
   const [saving, setSaving] = useState(false);
+  // Sugestões do plano da semana que foram enviadas junto com a mensagem
+  const planWeekStart: string | null = r.plan?.week ?? null;
+  const planItems: { ref: string; date: string; title: string }[] = Array.isArray(r.plan?.items) ? r.plan.items : [];
+  const suggestion = (ref: string) => planItems.find((p) => p.ref === ref);
+  const inPlanWeek = (date: string) => !!planWeekStart && weekDates(planWeekStart).includes(date);
 
   // Só mostra ações que apontam para coisas que realmente existem
   const valid = (a: Action) => {
@@ -40,6 +48,8 @@ export function TextReview({ dump }: { dump: Dump }) {
       case "create_assessment": return subjects.some((s) => s.id === a.subject_id) && !!a.name && DATE.test(a.date);
       case "move_assessment": return assessments.some((x) => x.id === a.assessment_id) && DATE.test(a.date);
       case "create_goal": return !!a.title;
+      case "move_suggestion": return !!suggestion(a.ref) && inPlanWeek(a.date);
+      case "remove_suggestion": return !!suggestion(a.ref);
       default: return false;
     }
   };
@@ -70,6 +80,17 @@ export function TextReview({ dump }: { dump: Dump }) {
         const weekly = a.kind !== "hours";
         res = await supabase.from("goals").insert({ title: a.title.slice(0, 120), kind: weekly ? "weekly" : "hours", times_per_week: weekly ? Math.max(1, Math.round(a.times_per_week ?? 1)) : null, target_hours: weekly ? null : Math.max(1, a.target_hours ?? 1), subject_id: a.subject_id || null, deadline: a.deadline && DATE.test(a.deadline) ? a.deadline : null });
         break;
+      }
+      // Sugestões do plano: mexe só no plano salvo (continuam sendo sugestões, nada vai para o calendário)
+      case "move_suggestion": {
+        const s = suggestion(a.ref)!;
+        if (!moveSuggestion(planWeekStart!, s, a.date)) throw new Error("Não achei essa sugestão no plano. Refaça o plano e tente de novo.");
+        return;
+      }
+      case "remove_suggestion": {
+        const s = suggestion(a.ref)!;
+        if (!removeSuggestion(planWeekStart!, s)) throw new Error("Não achei essa sugestão no plano. Refaça o plano e tente de novo.");
+        return;
       }
       default:
         return;

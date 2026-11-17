@@ -2,22 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { addDays, format, isBefore, isSameDay, parseISO, startOfDay, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Dumbbell, Loader2, Moon, RotateCw, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Dumbbell, Loader2, Moon, Pencil, RotateCw, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTable } from "@/lib/data";
-import { planWeek, type PlanItem, type WeekPlan as Plan } from "@/lib/despejo.functions";
-
+import { planWeek, type PlanItem } from "@/lib/despejo.functions";
 // O plano fica guardado no navegador por semana; se a agenda mudar, oferecemos refazer.
-const CACHE_KEY = (week: string) => `citidiano.plano.${week}`;
-type Cached = { plan: Plan; sig: string; at: string };
-
-const readCache = (week: string): Cached | null => {
-  try { const raw = localStorage.getItem(CACHE_KEY(week)); return raw ? JSON.parse(raw) : null; } catch { return null; }
-};
-const writeCache = (week: string, c: Cached) => {
-  try { localStorage.setItem(CACHE_KEY(week), JSON.stringify(c)); } catch { /* sem localStorage: segue sem cache */ }
-};
+import { PLAN_EVENT, editedSuggestions, moveSuggestion, readPlan as readCache, removeSuggestion, writePlan as writeCache, type CachedPlan as Cached } from "@/lib/plan-cache";
 
 const TYPE_LABEL: Record<PlanItem["type"], string> = { prova: "Prova", entrega: "Entrega", citi: "CITi", estudo: "Estudo", treino: "Treino", descanso: "Descanso", outro: "Compromisso" };
 const TYPE_COLOR: Partial<Record<PlanItem["type"], string>> = { citi: "#66CC00", treino: "#FF7A1A", descanso: "#94A3B8" };
@@ -64,7 +55,8 @@ export function WeekPlan() {
     setBusy(true);
     setError(null);
     try {
-      const r = await generate({ data: { weekStart: w } });
+      // Sugestões que o usuário mexeu à mão são mantidas no plano novo
+      const r = await generate({ data: { weekStart: w, keep: editedSuggestions(w) } });
       if (!r.ok) { if (weekRef.current === w) { setError(r.error); toast.error(r.error); } return; }
       const c = { plan: r.plan, sig, at: new Date().toISOString() };
       writeCache(w, c);
@@ -82,6 +74,20 @@ export function WeekPlan() {
     setError(null);
     if (!c && !autoTried.current.has(week)) { autoTried.current.add(week); run(); }
   }, [loaded, week]);
+
+  // Recarrega quando o plano muda (setas do quadro ou um comando no Despejo)
+  useEffect(() => {
+    const onChange = () => setCached(readCache(weekRef.current));
+    window.addEventListener(PLAN_EVENT, onChange);
+    return () => window.removeEventListener(PLAN_EVENT, onChange);
+  }, []);
+
+  const move = (date: string, title: string, delta: number) => {
+    const days = cached?.plan.days ?? [];
+    const i = days.findIndex((d) => d.date === date);
+    const target = days[i + delta];
+    if (target) moveSuggestion(week, { date, title }, target.date);
+  };
 
   const plan = cached?.plan;
   const outdated = !!cached && cached.sig !== sig;
@@ -145,7 +151,7 @@ export function WeekPlan() {
           {/* Quadro da semana, no estilo de uma planilha de rotina: uma coluna por dia */}
           <div className="overflow-x-auto rounded-3xl border">
             <div className="grid min-w-[880px] grid-cols-7">
-              {plan.days.map((d) => {
+              {plan.days.map((d, dayIdx) => {
                 const date = parseISO(d.date);
                 const isToday = isSameDay(date, today);
                 const past = isBefore(date, today);
@@ -171,11 +177,20 @@ export function WeekPlan() {
                             {it.note && <div className="mt-1 opacity-90">{it.note}</div>}
                           </div>
                         ) : (
-                          <div key={i} className="rounded-xl border border-dashed bg-background p-2.5 text-xs" style={{ borderColor: color, boxShadow: `inset 3px 0 0 ${color}` }}>
+                          <div key={i} className="group/s relative rounded-xl border border-dashed bg-background p-2.5 text-xs" style={{ borderColor: color, boxShadow: `inset 3px 0 0 ${color}` }}>
                             <div className="flex items-center gap-1 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
                               {it.type === "treino" ? <Dumbbell className="h-3 w-3" /> : it.type === "descanso" ? <Moon className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
                               Sugestão · {TYPE_LABEL[it.type]}
+                              {it.edited && <span className="ml-auto flex items-center gap-0.5 normal-case tracking-normal" title="Você ajustou esta sugestão"><Pencil className="h-2.5 w-2.5" /></span>}
                             </div>
+                            {/* Mover para o dia anterior/seguinte ou remover. Continua sendo sugestão. */}
+                            {!past && (
+                              <div className="absolute -top-2.5 right-1 hidden items-center gap-0.5 rounded-full border bg-background px-1 shadow-sm group-hover/s:flex">
+                                <button onClick={() => move(d.date, it.title, -1)} disabled={dayIdx === 0 || isBefore(parseISO(plan.days[dayIdx - 1]!.date), today)} className="rounded-full p-0.5 hover:bg-muted disabled:opacity-30" aria-label="Mover para o dia anterior"><ChevronLeft className="h-3 w-3" /></button>
+                                <button onClick={() => move(d.date, it.title, 1)} disabled={dayIdx === 6} className="rounded-full p-0.5 hover:bg-muted disabled:opacity-30" aria-label="Mover para o dia seguinte"><ChevronRight className="h-3 w-3" /></button>
+                                <button onClick={() => removeSuggestion(week, { date: d.date, title: it.title })} className="rounded-full p-0.5 hover:bg-muted" aria-label="Remover sugestão"><X className="h-3 w-3" /></button>
+                              </div>
+                            )}
                             <div className="font-semibold leading-snug">{it.title}</div>
                             {s && it.type === "estudo" && <div className="text-[10px] text-muted-foreground">{s.name}</div>}
                             {it.note && <div className="mt-1 text-muted-foreground">{it.note}</div>}
@@ -190,7 +205,7 @@ export function WeekPlan() {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-2"><span className="h-3 w-5 rounded bg-primary-deep" /> Compromisso fixo</span>
-            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded border border-dashed border-primary" /> Sugestão da IA</span>
+            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded border border-dashed border-primary" /> Sugestão da IA (passe o mouse para mover ou remover)</span>
             <span>Horários ainda não definidos — por enquanto, o plano mostra o que fazer em cada dia.</span>
             {cached && <span className="ml-auto">Gerado {format(parseISO(cached.at), "dd/MM 'às' HH:mm")}</span>}
           </div>

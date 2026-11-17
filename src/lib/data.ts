@@ -72,4 +72,4 @@ export const EVENT_KINDS: Record<string, string> = {
 const EXTRA_RE = /\bfina(l|is)\b|segunda chamada|2[ªa]\.?\s*chamada|reposi[cç][aã]o/i;
 export const isExtraAssessment = (a: { kind: string; name: string }) => a.kind === "extra" || EXTRA_RE.test(a.name);
 
-export const SUBJECT_COLORS = ["#00C853", "#0EA5A4", "#2563EB", "#F59E0B", "#EF4444", "#A855F7", "#111827"];
+export const SUBJECT_COLORS = ["#00C853", "#0EA5A4", "#06B6D4", "#2563EB", "#6366F1", "#A855F7", "#EC4899", "#EF4444", "#F97316", "#F59E0B", "#65A30D", "#111827"];

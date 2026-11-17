@@ -192,8 +192,11 @@ Ações possíveis (cada uma com "label": frase curta descrevendo a ação, ex.:
 - {"type":"create_assessment","label":string,"subject_id":string,"name":string,"date":"YYYY-MM-DD","kind":"prova"|"mini-prova"|"entrega"|"seminario"|"extra","topics":string|null}
 - {"type":"move_assessment","label":string,"assessment_id":string,"date":"YYYY-MM-DD"}
 - {"type":"create_goal","label":string,"title":string,"kind":"weekly"|"hours","times_per_week":number|null,"target_hours":number|null,"subject_id":string|null,"deadline":"YYYY-MM-DD"|null}
+- {"type":"move_suggestion","label":string,"ref":string,"date":"YYYY-MM-DD"}   (mover uma sugestão do plano da semana para outro dia da mesma semana)
+- {"type":"remove_suggestion","label":string,"ref":string}
 
 Regras:
+- Se o usuário falar de algo que está nas "Sugestões do plano da semana" (ex.: "muda a academia de quarta para quinta", "tira o estudo de sábado"), use move_suggestion/remove_suggestion com o ref da lista. NÃO crie evento no calendário para isso: continua sendo sugestão. Só crie eventos quando for um compromisso novo com dia definido.
 - Avaliações marcadas [extra] são finais, segunda chamada ou reposição: só acontecem para quem precisa. Quando o usuário perguntar sobre "provas" (próxima, última, quantas), considere só as regulares; cite as extras à parte, se for útil.
 - Perguntas sobre a agenda ("quando é minha próxima prova?", "o que tenho essa semana?"): responda com datas e dias da semana a partir dos dados acima, sem propor ações.
 - Datas relativas ("sexta que vem", "adiada uma semana", "amanhã") são calculadas a partir de hoje ou da data atual do item.
@@ -220,6 +223,9 @@ export const interpretText = createServerFn({ method: "POST" })
     const { data: dump } = await sb.from("dumps").select("*").eq("id", data.id).single();
     if (!dump) return { ok: false as const, error: "Item não encontrado." };
     const text = String((dump.result as any)?.text ?? dump.file_name).slice(0, 1000);
+    // Sugestões do plano da semana (vêm do navegador junto com a mensagem)
+    const planInfo = (dump.result as any)?.plan as { week: string; items: { ref: string; date: string; title: string; type: string }[] } | undefined;
+    const planItems = Array.isArray(planInfo?.items) ? planInfo!.items.slice(0, 40) : [];
     const key = process.env["GEMINI_API_KEY"];
     if (!key) return fail("A chave da IA não está configurada.");
 
@@ -239,6 +245,7 @@ export const interpretText = createServerFn({ method: "POST" })
       "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.id}: ${a.date} [${isExtra(a) ? "extra" : a.kind}] ${a.name} — ${sName(a.subject_id)}`)), (assessments ?? []).length ? "" : "(nenhuma)",
       "Compromissos (próximos 60 dias):", ...((events ?? []).map((e) => `- ${e.id}: ${localDateTime(e.starts_at)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)}` : ""}`)), (events ?? []).length ? "" : "(nenhum)",
       "Metas flexíveis:", ...((goals ?? []).map((g) => `- ${g.id}: ${g.title} (${g.kind === "weekly" ? `${g.times_per_week}x/semana` : `${g.target_hours}h`})`)), (goals ?? []).length ? "" : "(nenhuma)",
+      "Sugestões do plano da semana (NÃO estão no calendário; são só sugestões da IA):", ...planItems.map((p) => `- ${p.ref}: ${p.date} [${p.type}] ${p.title}`), planItems.length ? "" : "(nenhuma)",
     ].join("\n");
     const nowLabel = new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(now);
 
@@ -264,7 +271,7 @@ export const interpretText = createServerFn({ method: "POST" })
     let parsed: any;
     try { parsed = JSON.parse(out.replace(/^```json\s*|```$/g, "")); } catch { return fail("A IA respondeu de um jeito inesperado. Tente de novo."); }
     const actions = Array.isArray(parsed?.actions) ? parsed.actions.slice(0, 8) : [];
-    await sb.from("dumps").update({ status: "review", doc_type: "texto", result: { text, reply: String(parsed?.reply ?? ""), actions }, error: null }).eq("id", data.id).eq("status", "analyzing");
+    await sb.from("dumps").update({ status: "review", doc_type: "texto", result: { text, reply: String(parsed?.reply ?? ""), actions, plan: planInfo ?? null }, error: null }).eq("id", data.id).eq("status", "analyzing");
     return { ok: true as const };
   });
 
@@ -275,7 +282,11 @@ export const interpretText = createServerFn({ method: "POST" })
 // treino e descanso, cada uma com o motivo. Ainda sem horários.
 // ---------------------------------------------------------------------------
 
-export type PlanItem = { title: string; type: "prova" | "entrega" | "citi" | "estudo" | "treino" | "descanso" | "outro"; fixed: boolean; subject_id: string | null; note: string | null };
+export type PlanItem = { title: string; type: "prova" | "entrega" | "citi" | "estudo" | "treino" | "descanso" | "outro"; fixed: boolean; subject_id: string | null; note: string | null; edited?: boolean };
+type KeepItem = { date: string; title: string; type: string; subject_id: string | null; note: string | null };
+// Metas de atividade física (para conferir quantos treinos o plano sugere)
+const PHYSICAL_RE = /academia|treino|muscula|pelada|futebol|corrida|correr|nata[cç][aã]o|esporte|exerc[ií]cio f[ií]sico|caminhada|bike|pedal|luta|crossfit|yoga|pilates/i;
+const normTitle = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 export type PlanDay = { date: string; load: "leve" | "media" | "pesada"; items: PlanItem[] };
 export type WeekPlan = { headline: string; recommendations: { title: string; reason: string }[]; days: PlanDay[] };
 
@@ -286,7 +297,7 @@ const addDaysIso = (iso: string, n: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-function planPrompt(weekStart: string, today: string, ctx: string) {
+function planPrompt(weekStart: string, today: string, ctx: string, keep: KeepItem[]) {
   const days = Array.from({ length: 7 }, (_, i) => addDaysIso(weekStart, i));
   return `Você é o assistente do CITidiano, um planejador para universitários que também fazem empresa júnior (CITi), estágio e academia.
 Hoje é ${today}. Monte o plano da semana de ${days[0]} (segunda) a ${days[6]} (domingo).
@@ -311,14 +322,19 @@ Regras:
 - Não coloque sugestões em dias que já passaram (antes de ${today}); neles, mantenha só os fixos.
 - No máximo 4 itens por dia. Deixe pelo menos um dia leve. "note" curta (até 80 caracteres) explicando o motivo da sugestão; null nos fixos sem observação.
 - "subject_id" só com ids da lista de disciplinas; null quando não se aplica.
-- "recommendations": de 2 a 4 itens, os mais importantes da semana.`;
+- "recommendations": de 2 a 4 itens, os mais importantes da semana.
+- CONSISTÊNCIA: o quadro e as recomendações precisam dizer a mesma coisa. Se a recomendação diz "academia 2x", o quadro tem exatamente 2 sugestões de academia. Confira antes de responder.${keep.length ? `
+
+Sugestões que o usuário já ajustou à mão (elas serão mantidas exatamente nesses dias; NÃO as repita no JSON e planeje o resto em volta delas, contando-as nas metas):
+${keep.map((k) => `- ${k.date} [${k.type}] ${k.title}`).join("\n")}` : ""}`;
 }
 
 export const planWeek = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { weekStart: string }) => {
+  .inputValidator((d: { weekStart: string; keep?: KeepItem[] }) => {
     if (typeof d?.weekStart !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.weekStart)) throw new Error("semana inválida");
-    return d;
+    const keep = (Array.isArray(d.keep) ? d.keep : []).slice(0, 30).filter((k) => k && typeof k.title === "string" && typeof k.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(k.date));
+    return { weekStart: d.weekStart, keep };
   })
   .handler(async ({ data, context }) => {
     const sb = context.supabase;
@@ -345,7 +361,7 @@ export const planWeek = createServerFn({ method: "POST" })
     let res: Response;
     try {
       res = await callGemini(key, {
-        contents: [{ role: "user", parts: [{ text: planPrompt(from, isoDay(new Date()), ctx) }] }],
+        contents: [{ role: "user", parts: [{ text: planPrompt(from, isoDay(new Date()), ctx, data.keep) }] }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.4, thinkingConfig: { thinkingLevel: "low" } },
       });
     } catch (e) {
@@ -377,8 +393,26 @@ export const planWeek = createServerFn({ method: "POST" })
         subject_id: validSubject(it.subject_id),
         note: typeof it.note === "string" && it.note.trim() ? it.note.slice(0, 120) : null,
       }));
-      return { date, load: ["leve", "media", "pesada"].includes(d.load) ? d.load : "media", items };
+      // Sugestões ajustadas pelo usuário voltam exatamente para o dia escolhido (e tiram duplicatas da IA nesse dia)
+      const kept: PlanItem[] = data.keep.filter((k) => k.date === date).map((k) => ({ title: k.title.slice(0, 80), type: (PLAN_TYPES.includes(k.type) ? k.type : "outro") as PlanItem["type"], fixed: false, subject_id: validSubject(k.subject_id), note: k.note ? String(k.note).slice(0, 120) : null, edited: true }));
+      const keptTitles = new Set(kept.map((k) => normTitle(k.title)));
+      const merged = [...items.filter((it) => it.fixed || !keptTitles.has(normTitle(it.title))), ...kept];
+      return { date, load: ["leve", "media", "pesada"].includes(d.load) ? d.load : "media", items: merged };
     });
+
+    // Treinos: fixos + ajustados pelo usuário + sugeridos pela IA não podem passar da meta semanal
+    const target = (goals ?? []).filter((g) => g.kind === "weekly" && PHYSICAL_RE.test(g.title)).reduce((n, g) => n + (g.times_per_week ?? 0), 0);
+    if (target > 0) {
+      const all = days.flatMap((d) => d.items);
+      let allowed = Math.max(0, target - all.filter((it) => it.type === "treino" && (it.fixed || it.edited)).length);
+      for (const d of days) {
+        d.items = d.items.filter((it) => {
+          if (it.type !== "treino" || it.fixed || it.edited) return true;
+          if (allowed > 0) { allowed--; return true; }
+          return false;
+        });
+      }
+    }
     const plan: WeekPlan = {
       headline: String(parsed?.headline ?? "").slice(0, 160),
       recommendations: (Array.isArray(parsed?.recommendations) ? parsed.recommendations : []).slice(0, 4).filter((r: any) => r?.title).map((r: any) => ({ title: String(r.title).slice(0, 100), reason: String(r.reason ?? "").slice(0, 220) })),
