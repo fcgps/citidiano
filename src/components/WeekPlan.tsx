@@ -17,6 +17,15 @@ import { PLAN_EVENT, planSuggestions, editedSuggestions, moveSuggestion, readPla
 
 const TYPE_LABEL: Record<PlanItem["type"], string> = { prova: "Prova", entrega: "Entrega", citi: "CITi", estudo: "Estudo", treino: "Treino", descanso: "Descanso", outro: "Compromisso" };
 const TYPE_COLOR: Partial<Record<PlanItem["type"], string>> = { citi: "#66CC00", treino: "#FF7A1A", descanso: "#94A3B8" };
+// Carga do dia calculada a partir do que está no dia (e não pela IA), para
+// acompanhar quando uma sugestão é movida, removida ou adicionada.
+const WEIGHT_FIXED: Record<string, number> = { prova: 3, entrega: 2, citi: 2, treino: 1, estudo: 1, outro: 1, descanso: 0 };
+const WEIGHT_SUGGESTION: Record<string, number> = { estudo: 1.5, citi: 1.5, treino: 1, outro: 1, prova: 1, entrega: 1, descanso: -0.5 };
+function dayLoad(items: PlanItem[]): "leve" | "media" | "pesada" {
+  const score = items.reduce((n, it) => n + ((it.fixed ? WEIGHT_FIXED : WEIGHT_SUGGESTION)[it.type] ?? 1) * (it.fixed && /s[oó] se precisar/i.test(it.note ?? "") ? 0.3 : 1), 0);
+  return score < 2.5 ? "leve" : score < 5 ? "media" : "pesada";
+}
+
 const LOAD: Record<string, { label: string; cls: string }> = {
   leve: { label: "Leve", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
   media: { label: "Média", cls: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
@@ -160,7 +169,7 @@ export function WeekPlan() {
                 const date = parseISO(d.date);
                 const isToday = isSameDay(date, today);
                 const past = isBefore(date, today);
-                const load = LOAD[d.load] ?? LOAD.media!;
+                const load = LOAD[dayLoad(d.items)]!;
                 return (
                   <div key={d.date} className={cn("flex min-h-56 flex-col border-r last:border-r-0", isToday && "bg-accent/40", past && "opacity-50")}>
                     <div className={cn("border-b p-3", isToday && "border-primary")}>

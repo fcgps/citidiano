@@ -72,4 +72,16 @@ export const EVENT_KINDS: Record<string, string> = {
 const EXTRA_RE = /\bfina(l|is)\b|segunda chamada|2[ªa]\.?\s*chamada|reposi[cç][aã]o/i;
 export const isExtraAssessment = (a: { kind: string; name: string }) => a.kind === "extra" || EXTRA_RE.test(a.name);
 
+export const ASSESSMENT_KINDS: Record<string, string> = { prova: "Prova", "mini-prova": "Mini-prova", entrega: "Entrega", seminario: "Seminário", extra: "Final / 2ª chamada" };
+const MINI_RE = /mini[\s-]?prova/i;
+const LISTA_RE = /\blistas?\b|\baps\b|atividade/i;
+// Rótulo curto para mostrar avaliações (pelo tipo ou, nas antigas, pelo nome)
+export function assessmentTag(a: { kind: string; name: string }): { key: "extra" | "mini" | "lista" | "entrega" | "prova"; label: string } {
+  if (isExtraAssessment(a)) return { key: "extra", label: "Final / 2ª ch." };
+  if (a.kind === "mini-prova" || MINI_RE.test(a.name)) return { key: "mini", label: "Mini-prova" };
+  if (LISTA_RE.test(a.name)) return { key: "lista", label: "Lista / APS" };
+  if (a.kind === "entrega" || a.kind === "seminario") return { key: "entrega", label: a.kind === "seminario" ? "Seminário" : "Entrega" };
+  return { key: "prova", label: "Prova" };
+}
+
 export const SUBJECT_COLORS = ["#00C853", "#0EA5A4", "#06B6D4", "#2563EB", "#6366F1", "#A855F7", "#EC4899", "#EF4444", "#F97316", "#F59E0B", "#65A30D", "#111827"];
