@@ -9,22 +9,21 @@ const FALLBACK_MODEL = "gemini-3.5-flash-lite";
 
 // As atualizações de status abaixo usam .eq("status", "analyzing"): se o usuário
 // cancelou a análise no meio, o resultado da IA é simplesmente ignorado.
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Chama o Gemini tentando de novo sozinho quando o Google está instável, sem
-// deixar o usuário esperando demais: cada tentativa tem no máximo 25 s e o total
-// fica em torno de 45 s. 429/500/503 ou demora → tenta de novo; depois, o modelo reserva.
-const ATTEMPT_MS = 25_000;
+// Chama o Gemini sem deixar o usuário esperando demais (total ~45 s):
+// 1) tenta o modelo principal por pouco tempo; 2) se demorar ou o Google estiver
+// sobrecarregado (429/500/503), vai direto para o modelo reserva, que costuma
+// estar livre quando o principal está congestionado.
 const TOTAL_MS = 45_000;
 
-async function callGemini(key: string, body: unknown): Promise<Response> {
+async function callGemini(key: string, body: unknown, firstMs = 20_000): Promise<Response> {
   const started = Date.now();
   const timeout = () => new Response(JSON.stringify({ error: "timeout" }), { status: 504 });
-  const attempt = async (model: string) => {
-    const left = TOTAL_MS - (Date.now() - started);
+  const attempt = async (model: string, maxMs: number) => {
+    const left = Math.min(maxMs, TOTAL_MS - (Date.now() - started));
     if (left < 3_000) return timeout();
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), Math.min(ATTEMPT_MS, left));
+    const t = setTimeout(() => ctrl.abort(), left);
     try {
       return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
@@ -40,13 +39,11 @@ async function callGemini(key: string, body: unknown): Promise<Response> {
     }
   };
   const transient = (r: Response) => [429, 500, 503, 504].includes(r.status);
-  let res = await attempt(MODEL);
-  if (!transient(res)) return res;
-  await sleep(1500);
-  res = await attempt(MODEL);
-  if (!transient(res) || res.status === 429) return res;
-  const alt = await attempt(FALLBACK_MODEL);
-  return alt.ok || alt.status !== 404 ? alt : res;
+  const first = await attempt(MODEL, firstMs);
+  if (!transient(first)) return first;
+  console.warn("Gemini principal falhou", first.status, "→ usando modelo reserva");
+  const alt = await attempt(FALLBACK_MODEL, TOTAL_MS);
+  return alt.status === 404 ? first : alt;
 }
 
 function toBase64(buf: ArrayBuffer) {
@@ -250,7 +247,7 @@ export const interpretText = createServerFn({ method: "POST" })
       res = await callGemini(key, {
         contents: [{ role: "user", parts: [{ text: textPrompt(text, ctx, nowLabel, today) }] }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.3, thinkingConfig: { thinkingLevel: "low" } },
-      });
+      }, 15_000);
     } catch (e) {
       console.error(e);
       return fail("Não consegui falar com a IA. Tente de novo em instantes.");
