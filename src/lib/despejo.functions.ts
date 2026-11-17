@@ -291,6 +291,18 @@ export type PlanItem = { title: string; type: "prova" | "entrega" | "citi" | "es
 type KeepItem = { date: string; title: string; type: string; subject_id: string | null; note: string | null };
 // Metas de atividade física (para conferir quantos treinos o plano sugere)
 const PHYSICAL_RE = /academia|treino|muscula|pelada|futebol|corrida|correr|nata[cç][aã]o|esporte|exerc[ií]cio f[ií]sico|caminhada|bike|pedal|luta|crossfit|yoga|pilates/i;
+// Dois títulos falam da mesma coisa? (ex.: "Pelada Futebol" e "Pelada")
+const words = (t: string) => new Set(t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+function sameThing(a: string, b: string) {
+  const na = normTitle(a), nb = normTitle(b);
+  if (na && nb && (na.includes(nb) || nb.includes(na))) return true;
+  const A = words(a), B = words(b);
+  if (!A.size || !B.size) return false;
+  let common = 0;
+  A.forEach((w) => B.has(w) && common++);
+  // Jaccard alto: "Estudo de DS" não é a "Prova de DS", e "Avançar desafio" não é a "Entrega do desafio"
+  return common / (A.size + B.size - common) >= 0.75;
+}
 const normTitle = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 export type PlanDay = { date: string; load: "leve" | "media" | "pesada"; items: PlanItem[] };
 export type WeekPlan = { headline: string; recommendations: { title: string; reason: string }[]; days: PlanDay[] };
@@ -387,6 +399,11 @@ export const planWeek = createServerFn({ method: "POST" })
     // Limpa a resposta: sempre 7 dias na ordem certa, tipos válidos, ids existentes
     const validSubject = (id: unknown) => (typeof id === "string" && (subjects ?? []).some((s) => s.id === id) ? id : null);
     const today = isoDay(new Date());
+    // O que realmente está na agenda em cada dia (para conferir os "fixos" da IA)
+    const realOn = (date: string) => [
+      ...(assessments ?? []).filter((a) => a.date === date).map((a) => a.name),
+      ...(events ?? []).filter((e) => e.kind !== "feriado" && isoDay(new Date(e.starts_at)) === date).map((e) => e.title),
+    ];
     const days: PlanDay[] = Array.from({ length: 7 }, (_, i) => {
       const date = addDaysIso(from, i);
       const past = date < today; // dias que já passaram: só compromissos fixos, nunca sugestões
@@ -400,8 +417,15 @@ export const planWeek = createServerFn({ method: "POST" })
       }));
       // Sugestões ajustadas pelo usuário voltam exatamente para o dia escolhido (e tiram duplicatas da IA nesse dia)
       const kept: PlanItem[] = data.keep.filter((k) => k.date === date).map((k) => ({ title: k.title.slice(0, 80), type: (PLAN_TYPES.includes(k.type) ? k.type : "outro") as PlanItem["type"], fixed: false, subject_id: validSubject(k.subject_id), note: k.note ? String(k.note).slice(0, 120) : null, edited: true }));
-      const keptTitles = new Set(kept.map((k) => normTitle(k.title)));
-      const merged = [...items.filter((it) => it.fixed || !keptTitles.has(normTitle(it.title))), ...kept];
+      // "Fixo" só se existir de verdade na agenda desse dia; senão vira sugestão
+      const real = realOn(date);
+      const checked = items.map((it) => (it.fixed && !real.some((r) => sameThing(r, it.title)) ? { ...it, fixed: false } : it));
+      const fixedTitles = checked.filter((it) => it.fixed).map((it) => it.title);
+      // Sem duplicatas no dia: sugestão igual a um fixo some; ajuste do usuário substitui a sugestão da IA
+      const merged = [
+        ...checked.filter((it) => it.fixed || (!fixedTitles.some((f) => sameThing(f, it.title)) && !kept.some((k) => sameThing(k.title, it.title)))),
+        ...kept.filter((k) => !fixedTitles.some((f) => sameThing(f, k.title))),
+      ];
       return { date, load: ["leve", "media", "pesada"].includes(d.load) ? d.load : "media", items: merged };
     });
 
