@@ -32,8 +32,9 @@ function Shell() {
         <div className="blob right-[-10rem] top-[55%] h-72 w-72 opacity-40" />
       </div>
       <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-          <div className="flex items-center gap-3">
+        {/* Cabeçalho na largura toda: conta e logo encostados à esquerda, menu no centro */}
+        <div className="grid h-16 w-full grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 md:px-6">
+          <div className="flex items-center gap-3 justify-self-start">
             {/* Conta: configurações (tema), trocar/adicionar conta e sair */}
             <AccountMenu email={user.email ?? "Conta"} userId={user.id} />
             <Link to="/painel"><Logo /></Link>
@@ -46,8 +47,7 @@ function Shell() {
               </Link>
             ))}
           </nav>
-          {/* espaço do mesmo tamanho do lado esquerdo, para o menu ficar centralizado */}
-          <div aria-hidden className="hidden w-[180px] md:block" />
+          <div aria-hidden />
         </div>
       </header>
       <main className="relative mx-auto max-w-6xl px-5 pb-28 pt-10 md:pb-16"><Outlet /></main>
