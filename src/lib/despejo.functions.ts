@@ -2,6 +2,33 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const MODEL = "gemini-3.5-flash";
+// Modelo reserva, usado quando o principal está sobrecarregado (erros 500/503)
+const FALLBACK_MODEL = "gemini-3.5-flash-lite";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Chama o Gemini tentando de novo sozinho quando o Google está instável.
+// 429/500/503 → espera e tenta de novo; se continuar, tenta o modelo reserva.
+async function callGemini(key: string, body: unknown): Promise<Response> {
+  const attempt = (model: string) =>
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify(body),
+    });
+  const transient = (r: Response) => r.status === 429 || r.status === 500 || r.status === 503;
+  let res = await attempt(MODEL);
+  for (const wait of [1500, 4000]) {
+    if (!transient(res)) return res;
+    await sleep(wait);
+    res = await attempt(MODEL);
+  }
+  if (res.status === 500 || res.status === 503) {
+    const alt = await attempt(FALLBACK_MODEL);
+    if (alt.ok || alt.status !== 404) return alt;
+  }
+  return res;
+}
 
 function toBase64(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf);
@@ -77,16 +104,12 @@ export const analyzeDump = createServerFn({ method: "POST" })
 
     let res: Response;
     try {
-      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [
-            { inline_data: { mime_type: dump.mime || file.type, data: toBase64(await file.arrayBuffer()) } },
-            { text: prompt(today, catalog) },
-          ] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
-        }),
+      res = await callGemini(key, {
+        contents: [{ role: "user", parts: [
+          { inline_data: { mime_type: dump.mime || file.type, data: toBase64(await file.arrayBuffer()) } },
+          { text: prompt(today, catalog) },
+        ] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
       });
     } catch (e) {
       console.error(e);
@@ -94,7 +117,7 @@ export const analyzeDump = createServerFn({ method: "POST" })
     }
     if (!res.ok) {
       console.error("Gemini", res.status, await res.text());
-      if (res.status === 429) return fail("A IA está sobrecarregada agora. Tente de novo em um minuto.");
+      if (res.status === 429 || res.status === 503) return fail("A IA do Google está sobrecarregada agora. Tente de novo em um minuto.");
       if (res.status === 400) return fail("A IA não conseguiu ler este arquivo. Ele pode estar corrompido ou ser grande demais.");
       if (res.status === 403 || res.status === 401) return fail("A chave da IA foi recusada. Verifique a chave do Gemini.");
       return fail(`A IA teve um problema ao analisar o arquivo (erro ${res.status}). Tente de novo.`);
@@ -152,6 +175,7 @@ Ações possíveis (cada uma com "label": frase curta descrevendo a ação, ex.:
 - {"type":"create_goal","label":string,"title":string,"kind":"weekly"|"hours","times_per_week":number|null,"target_hours":number|null,"subject_id":string|null,"deadline":"YYYY-MM-DD"|null}
 
 Regras:
+- Perguntas sobre a agenda ("quando é minha próxima prova?", "o que tenho essa semana?"): responda com datas e dias da semana a partir dos dados acima, sem propor ações.
 - Datas relativas ("sexta que vem", "adiada uma semana", "amanhã") são calculadas a partir de hoje ou da data atual do item.
 - Avisos de mudança ("prova adiada", "professor passou atividade para sexta") viram move_*/create_* sobre os itens existentes. Demandas, reuniões e entregas do CITi/empresa júnior usam kind "citi".
 - Se o usuário não quer estudar algo hoje: veja se há prova dessa disciplina nos próximos dias. Se a prova estiver longe, aceite e redistribua (mova os eventos de estudo de hoje ou crie sessões em outros dias). Se estiver perto (até 4 dias), negocie com gentileza: sugira uma sessão curta hoje e o resto depois, explicando o motivo.
@@ -200,13 +224,9 @@ export const interpretText = createServerFn({ method: "POST" })
 
     let res: Response;
     try {
-      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: textPrompt(text, ctx, nowLabel, today) }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
-        }),
+      res = await callGemini(key, {
+        contents: [{ role: "user", parts: [{ text: textPrompt(text, ctx, nowLabel, today) }] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
       });
     } catch (e) {
       console.error(e);
@@ -214,7 +234,7 @@ export const interpretText = createServerFn({ method: "POST" })
     }
     if (!res.ok) {
       console.error("Gemini", res.status, await res.text());
-      if (res.status === 429) return fail("A IA está sobrecarregada agora. Tente de novo em um minuto.");
+      if (res.status === 429 || res.status === 503) return fail("A IA do Google está sobrecarregada agora. Tente de novo em um minuto.");
       if (res.status === 403 || res.status === 401) return fail("A chave da IA foi recusada. Verifique a chave do Gemini.");
       return fail(`A IA teve um problema ao entender sua mensagem (erro ${res.status}). Tente de novo.`);
     }
