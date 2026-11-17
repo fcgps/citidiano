@@ -73,7 +73,7 @@ Formato:
   "cronograma": null | {
     "subject_name": string|null,
     "professor": string|null,
-    "assessments": [{"name": string, "date": "YYYY-MM-DD"|null, "kind": "prova"|"mini-prova"|"entrega"|"seminario", "topics": string|null, "conflict": null | {"note": string, "options": ["YYYY-MM-DD", ...]}}],
+    "assessments": [{"name": string, "date": "YYYY-MM-DD"|null, "kind": "prova"|"mini-prova"|"entrega"|"seminario"|"extra", "topics": string|null, "conflict": null | {"note": string, "options": ["YYYY-MM-DD", ...]}}],
     "holidays": [{"date": "YYYY-MM-DD", "description": string}],
     "topics": [string],
     "conflicts": [string]
@@ -86,7 +86,7 @@ Formato:
     "new_topic_name": "nome de tópico sugerido se nenhum combinar, senão null"
   }
 }
-Regras: datas sem ano assumem o semestre atual (ano de hoje; se o mês já passou muito e o documento parece do próximo semestre, use o ano coerente). Use null para o que não estiver no documento — nunca invente. Se a mesma avaliação aparecer com datas diferentes, preencha "conflict" com as opções e coloque em "date" a mais provável. Assuntos cobrados em "topics" como texto curto.`;
+Regras: datas sem ano assumem o semestre atual (ano de hoje; se o mês já passou muito e o documento parece do próximo semestre, use o ano coerente). Use null para o que não estiver no documento — nunca invente. Se a mesma avaliação aparecer com datas diferentes, preencha "conflict" com as opções e coloque em "date" a mais provável. Assuntos cobrados em "topics" como texto curto. Use kind "extra" para provas finais, segunda chamada, reposição e exame final (na UFPE, "Exercício Escolar Final" ou "EE Final" também é final): elas só acontecem para quem precisa.`;
 }
 
 export const analyzeDump = createServerFn({ method: "POST" })
@@ -160,6 +160,8 @@ export const analyzeDump = createServerFn({ method: "POST" })
 // ---------------------------------------------------------------------------
 
 const TZ = "America/Sao_Paulo";
+// Mesmo critério de isExtraAssessment (src/lib/data.ts): finais, 2ª chamada, reposição
+const isExtra = (a: { kind: string; name: string }) => a.kind === "extra" || /\bfina(l|is)\b|segunda chamada|2[ªa]\.?\s*chamada|reposi[cç][aã]o/i.test(a.name);
 const isoDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);
 const localDateTime = (iso: string) => {
   const d = new Date(iso);
@@ -188,11 +190,12 @@ Ações possíveis (cada uma com "label": frase curta descrevendo a ação, ex.:
 - {"type":"create_event","label":string,"title":string,"kind":"prova"|"entrega"|"citi"|"reuniao"|"estudo"|"treino"|"outro","date":"YYYY-MM-DD","time":"HH:MM","subject_id":string|null}
 - {"type":"move_event","label":string,"event_id":string,"date":"YYYY-MM-DD","time":"HH:MM"}
 - {"type":"delete_event","label":string,"event_id":string}
-- {"type":"create_assessment","label":string,"subject_id":string,"name":string,"date":"YYYY-MM-DD","kind":"prova"|"mini-prova"|"entrega"|"seminario","topics":string|null}
+- {"type":"create_assessment","label":string,"subject_id":string,"name":string,"date":"YYYY-MM-DD","kind":"prova"|"mini-prova"|"entrega"|"seminario"|"extra","topics":string|null}
 - {"type":"move_assessment","label":string,"assessment_id":string,"date":"YYYY-MM-DD"}
 - {"type":"create_goal","label":string,"title":string,"kind":"weekly"|"hours","times_per_week":number|null,"target_hours":number|null,"subject_id":string|null,"deadline":"YYYY-MM-DD"|null}
 
 Regras:
+- Avaliações marcadas [extra] são finais, segunda chamada ou reposição: só acontecem para quem precisa. Quando o usuário perguntar sobre "provas" (próxima, última, quantas), considere só as regulares; cite as extras à parte, se for útil.
 - Perguntas sobre a agenda ("quando é minha próxima prova?", "o que tenho essa semana?"): responda com datas e dias da semana a partir dos dados acima, sem propor ações.
 - Datas relativas ("sexta que vem", "adiada uma semana", "amanhã") são calculadas a partir de hoje ou da data atual do item.
 - Avisos de mudança ("prova adiada", "professor passou atividade para sexta") viram move_*/create_* sobre os itens existentes. Demandas, reuniões e entregas do CITi/empresa júnior usam kind "citi".
@@ -234,7 +237,7 @@ export const interpretText = createServerFn({ method: "POST" })
     const sName = (id: string | null) => (subjects ?? []).find((s) => s.id === id)?.name ?? "";
     const ctx = [
       "Disciplinas:", ...((subjects ?? []).map((s) => `- ${s.id}: ${s.name}`)), (subjects ?? []).length ? "" : "(nenhuma)",
-      "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.id}: ${a.date} [${a.kind}] ${a.name} — ${sName(a.subject_id)}`)), (assessments ?? []).length ? "" : "(nenhuma)",
+      "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.id}: ${a.date} [${isExtra(a) ? "extra" : a.kind}] ${a.name} — ${sName(a.subject_id)}`)), (assessments ?? []).length ? "" : "(nenhuma)",
       "Compromissos (próximos 60 dias):", ...((events ?? []).map((e) => `- ${e.id}: ${localDateTime(e.starts_at)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)}` : ""}`)), (events ?? []).length ? "" : "(nenhum)",
       "Metas flexíveis:", ...((goals ?? []).map((g) => `- ${g.id}: ${g.title} (${g.kind === "weekly" ? `${g.times_per_week}x/semana` : `${g.target_hours}h`})`)), (goals ?? []).length ? "" : "(nenhuma)",
     ].join("\n");

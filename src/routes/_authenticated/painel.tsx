@@ -5,7 +5,7 @@ import { ptBR } from "date-fns/locale";
 import { PageHeader, Stat } from "@/components/PageHeader";
 import { GoalCard } from "@/components/GoalCard";
 import { Dropzone } from "@/components/despejo/Dropzone";
-import { useTable, EVENT_KINDS } from "@/lib/data";
+import { useTable, EVENT_KINDS, isExtraAssessment } from "@/lib/data";
 
 export const Route = createFileRoute("/_authenticated/painel")({
   head: () => ({ meta: [{ title: "Painel — CITidiano" }, { name: "description", content: "O resumo da sua semana." }, { property: "og:title", content: "Painel — CITidiano" }, { property: "og:description", content: "O resumo da sua semana." }] }),
@@ -29,7 +29,7 @@ function Painel() {
   const subj = (id: string | null) => subjects.find((s) => s.id === id);
 
   const upcoming = [
-    ...assessments.map((a) => ({ id: a.id, title: a.name, sub: subj(a.subject_id)?.name, color: subj(a.subject_id)?.color, date: parseISO(a.date), kind: "Avaliação" })),
+    ...assessments.map((a) => ({ id: a.id, title: a.name, sub: subj(a.subject_id)?.name, color: subj(a.subject_id)?.color, date: parseISO(a.date), kind: isExtraAssessment(a) ? "Final / 2ª chamada" : "Avaliação" })),
     ...events.filter((e) => e.kind === "prova" || e.kind === "entrega").map((e) => ({ id: e.id, title: e.title, sub: subj(e.subject_id)?.name, color: subj(e.subject_id)?.color, date: parseISO(e.starts_at), kind: EVENT_KINDS[e.kind] })),
   ].filter((x) => x.date >= today && x.date <= addDays(today, 30)).sort((a, b) => +a.date - +b.date);
   const thisWeek = upcoming.filter((x) => isWithinInterval(x.date, week)).length;

@@ -67,4 +67,9 @@ export function useRemove(table: TableName) {
 export const EVENT_KINDS: Record<string, string> = {
   prova: "Prova", entrega: "Entrega", citi: "Demanda CITi", reuniao: "Reunião", estudo: "Estudo", treino: "Treino", feriado: "Sem aula", outro: "Outro",
 };
+// Provas finais, segunda chamada e reposição: só acontecem para quem precisa.
+// Vale o tipo "extra" ou, para avaliações antigas, um nome que indique isso.
+const EXTRA_RE = /\bfina(l|is)\b|segunda chamada|2[ªa]\.?\s*chamada|reposi[cç][aã]o/i;
+export const isExtraAssessment = (a: { kind: string; name: string }) => a.kind === "extra" || EXTRA_RE.test(a.name);
+
 export const SUBJECT_COLORS = ["#00C853", "#0EA5A4", "#2563EB", "#F59E0B", "#EF4444", "#A855F7", "#111827"];

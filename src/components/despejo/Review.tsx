@@ -9,7 +9,7 @@ import { SUBJECT_COLORS, useTable, type Assessment, type Dump, type Subject, typ
 
 const field = "h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring";
 const missing = "border-amber-400 bg-amber-50/60 dark:bg-amber-950/30";
-export const KINDS: Record<string, string> = { prova: "Prova", "mini-prova": "Mini-prova", entrega: "Entrega", seminario: "Seminário" };
+export const KINDS: Record<string, string> = { prova: "Prova", "mini-prova": "Mini-prova", entrega: "Entrega", seminario: "Seminário", extra: "Final / 2ª chamada" };
 
 function Missing({ show }: { show: boolean }) {
   return show ? <span className="ml-2 text-[11px] font-medium text-amber-600">A IA não identificou</span> : null;

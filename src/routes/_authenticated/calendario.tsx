@@ -9,18 +9,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useTable, useInsert, useRemove, EVENT_KINDS } from "@/lib/data";
+import { useTable, useInsert, useRemove, EVENT_KINDS, isExtraAssessment } from "@/lib/data";
 
 export const Route = createFileRoute("/_authenticated/calendario")({
   head: () => ({ meta: [{ title: "Calendário — CITidiano" }, { name: "description", content: "Compromissos fixos e metas flexíveis da sua semana." }, { property: "og:title", content: "Calendário — CITidiano" }, { property: "og:description", content: "Compromissos e metas." }] }),
   component: Calendario,
 });
 
-type Cat = "prova" | "entrega" | "citi" | "rotina" | "compromisso" | "feriado";
+type Cat = "prova" | "extra" | "entrega" | "citi" | "rotina" | "compromisso" | "feriado";
 type Item = { id: string; title: string; date: Date; time?: string; color: string; kind: string; cat: Cat; subjectId: string | null; source: "event" | "assessment" };
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "prova", label: "Provas" },
+  { id: "extra", label: "Finais e 2ª chamada" },
   { id: "entrega", label: "Entregas" },
   { id: "citi", label: "Demandas CITi" },
   { id: "rotina", label: "Estudo e treino" },
@@ -101,7 +102,7 @@ function GoalDialog() {
 function Chip({ it, compact }: { it: Item; compact?: boolean }) {
   const rm = useRemove("events");
   return (
-    <div className="group flex items-start justify-between gap-1 rounded-lg px-2 py-1.5 text-xs text-background" style={{ background: it.color }}>
+    <div className={`group flex items-start justify-between gap-1 rounded-lg px-2 py-1.5 text-xs text-background ${it.cat === "extra" ? "opacity-60" : ""}`} style={{ background: it.color }} title={it.cat === "extra" ? "Final / 2ª chamada — só se precisar" : undefined}>
       <div className="min-w-0">
         {!compact && <div className="font-mono text-[10px] uppercase opacity-80">{it.time ?? "Dia todo"} · {EVENT_KINDS[it.kind] ?? it.kind}</div>}
         <div className="truncate font-semibold">{it.title}</div>
@@ -122,7 +123,7 @@ function Calendario() {
 
   const items: Item[] = useMemo(() => [
     ...events.map((e) => { const d = parseISO(e.starts_at); return { id: e.id, title: e.title, date: d, time: format(d, "HH:mm"), color: subj(e.subject_id)?.color ?? KIND_COLORS[e.kind] ?? "#0F5132", kind: e.kind, cat: eventCat(e.kind), subjectId: e.subject_id, source: "event" as const }; }),
-    ...assessments.map((a) => { const kind = a.kind === "seminario" || a.kind === "entrega" ? "entrega" : "prova"; return { id: a.id, title: `${a.name} · ${subj(a.subject_id)?.name ?? ""}`, date: parseISO(a.date), color: subj(a.subject_id)?.color ?? "#00C853", kind, cat: kind as Cat, subjectId: a.subject_id, source: "assessment" as const }; }),
+    ...assessments.map((a) => { const kind = a.kind === "seminario" || a.kind === "entrega" ? "entrega" : "prova"; return { id: a.id, title: `${a.name} · ${subj(a.subject_id)?.name ?? ""}`, date: parseISO(a.date), color: subj(a.subject_id)?.color ?? "#00C853", kind, cat: (isExtraAssessment(a) ? "extra" : kind) as Cat, subjectId: a.subject_id, source: "assessment" as const }; }),
   ].sort((a, b) => a.date.getTime() - b.date.getTime()), [events, assessments, subjects]);
 
   // Filtros: começa mostrando tudo; o que o usuário esconder fica salvo no navegador

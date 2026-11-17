@@ -19,7 +19,7 @@ type Action =
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^\d{2}:\d{2}$/;
-const ASSESSMENT_KINDS = ["prova", "mini-prova", "entrega", "seminario"];
+const ASSESSMENT_KINDS = ["prova", "mini-prova", "entrega", "seminario", "extra"];
 
 export function TextReview({ dump }: { dump: Dump }) {
   const r = (dump.result as any) ?? {};
