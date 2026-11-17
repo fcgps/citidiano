@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Plus, Trash2, SlidersHorizontal } from "lucide-react";
 import { addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, parseISO, startOfMonth, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { PageHeader } from "@/components/PageHeader";
@@ -16,7 +16,37 @@ export const Route = createFileRoute("/_authenticated/calendario")({
   component: Calendario,
 });
 
-type Item = { id: string; title: string; date: Date; time?: string; color: string; kind: string; source: "event" | "assessment" };
+type Cat = "prova" | "entrega" | "citi" | "rotina" | "compromisso" | "feriado";
+type Item = { id: string; title: string; date: Date; time?: string; color: string; kind: string; cat: Cat; subjectId: string | null; source: "event" | "assessment" };
+
+const CATS: { id: Cat; label: string }[] = [
+  { id: "prova", label: "Provas" },
+  { id: "entrega", label: "Entregas" },
+  { id: "citi", label: "Demandas CITi" },
+  { id: "rotina", label: "Estudo e treino" },
+  { id: "compromisso", label: "Outros compromissos" },
+  { id: "feriado", label: "Feriados" },
+];
+
+function eventCat(kind: string): Cat {
+  if (kind === "prova" || kind === "entrega" || kind === "citi" || kind === "feriado") return kind;
+  if (kind === "estudo" || kind === "treino") return "rotina";
+  return "compromisso";
+}
+
+// Cor para compromissos sem disciplina (ex.: demandas do CITi)
+const KIND_COLORS: Record<string, string> = { citi: "#0F5132", estudo: "#475569", treino: "#475569" };
+
+const FILTER_KEY = "citidiano.calendario.filtros";
+type Filters = { cats: Cat[]; subjects: string[] }; // o que está ESCONDIDO
+
+function loadFilters(): Filters {
+  try {
+    const raw = localStorage.getItem(FILTER_KEY);
+    if (raw) { const f = JSON.parse(raw); return { cats: f.cats ?? [], subjects: f.subjects ?? [] }; }
+  } catch { /* sem localStorage: segue sem filtros salvos */ }
+  return { cats: [], subjects: [] };
+}
 
 const sel = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm";
 
@@ -91,9 +121,25 @@ function Calendario() {
   const subj = (id: string | null) => subjects.find((s) => s.id === id);
 
   const items: Item[] = useMemo(() => [
-    ...events.map((e) => { const d = parseISO(e.starts_at); return { id: e.id, title: e.title, date: d, time: format(d, "HH:mm"), color: subj(e.subject_id)?.color ?? "#0F5132", kind: e.kind, source: "event" as const }; }),
-    ...assessments.map((a) => ({ id: a.id, title: `${a.name} · ${subj(a.subject_id)?.name ?? ""}`, date: parseISO(a.date), color: subj(a.subject_id)?.color ?? "#00C853", kind: a.kind === "seminario" || a.kind === "entrega" ? "entrega" : "prova", source: "assessment" as const })),
+    ...events.map((e) => { const d = parseISO(e.starts_at); return { id: e.id, title: e.title, date: d, time: format(d, "HH:mm"), color: subj(e.subject_id)?.color ?? KIND_COLORS[e.kind] ?? "#0F5132", kind: e.kind, cat: eventCat(e.kind), subjectId: e.subject_id, source: "event" as const }; }),
+    ...assessments.map((a) => { const kind = a.kind === "seminario" || a.kind === "entrega" ? "entrega" : "prova"; return { id: a.id, title: `${a.name} · ${subj(a.subject_id)?.name ?? ""}`, date: parseISO(a.date), color: subj(a.subject_id)?.color ?? "#00C853", kind, cat: kind as Cat, subjectId: a.subject_id, source: "assessment" as const }; }),
   ].sort((a, b) => a.date.getTime() - b.date.getTime()), [events, assessments, subjects]);
+
+  // Filtros: começa mostrando tudo; o que o usuário esconder fica salvo no navegador
+  const [filters, setFilters] = useState<Filters>({ cats: [], subjects: [] });
+  const [showFilters, setShowFilters] = useState(false);
+  useEffect(() => { setFilters(loadFilters()); }, []);
+  useEffect(() => { try { localStorage.setItem(FILTER_KEY, JSON.stringify(filters)); } catch { /* ignora */ } }, [filters]);
+  const toggleCat = (c: Cat) => setFilters((f) => ({ ...f, cats: f.cats.includes(c) ? f.cats.filter((x) => x !== c) : [...f.cats, c] }));
+  const toggleSubject = (id: string) => setFilters((f) => ({ ...f, subjects: f.subjects.includes(id) ? f.subjects.filter((x) => x !== id) : [...f.subjects, id] }));
+  const onlySubject = (id: string) => setFilters((f) => ({ ...f, subjects: subjects.map((s) => s.id).filter((x) => x !== id) }));
+  const hiddenCount = filters.cats.length + filters.subjects.length;
+
+  const visible = items.filter((i) => !filters.cats.includes(i.cat) && !(i.subjectId && filters.subjects.includes(i.subjectId)));
+  // Feriados não viram "evento": o dia fica acinzentado com o nome pequeno
+  const holidaysOn = (d: Date) => visible.filter((i) => i.cat === "feriado" && isSameDay(i.date, d));
+  const dayItems = (d: Date) => visible.filter((i) => i.cat !== "feriado" && isSameDay(i.date, d));
+  const countCat = (c: Cat) => items.filter((i) => i.cat === c).length;
 
   const start = view === "week" ? startOfWeek(cursor, { weekStartsOn: 1 }) : startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 });
   const end = view === "week" ? endOfWeek(cursor, { weekStartsOn: 1 }) : endOfWeek(endOfMonth(cursor), { weekStartsOn: 1 });
@@ -124,16 +170,57 @@ function Calendario() {
         </div>
       </div>
 
+      <div className="mb-5">
+        <button onClick={() => setShowFilters((v) => !v)} className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium ${showFilters || hiddenCount ? "border-primary text-primary-deep" : "text-muted-foreground"}`}>
+          <SlidersHorizontal className="h-4 w-4" /> Filtros{hiddenCount > 0 && <span className="rounded-full bg-primary px-2 text-xs text-primary-foreground">{hiddenCount} oculto{hiddenCount > 1 ? "s" : ""}</span>}
+        </button>
+        {showFilters && (
+          <div className="mt-3 space-y-4 rounded-2xl border bg-background/80 p-4">
+            <div>
+              <p className="eyebrow mb-2">Mostrar</p>
+              <div className="flex flex-wrap gap-2">
+                {CATS.map((c) => {
+                  const on = !filters.cats.includes(c.id);
+                  return (
+                    <button key={c.id} onClick={() => toggleCat(c.id)} className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${on ? "border-primary bg-accent text-primary-deep" : "text-muted-foreground line-through opacity-60"}`}>
+                      {c.label} <span className="font-mono opacity-70">{countCat(c.id)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {subjects.length > 0 && (
+              <div>
+                <p className="eyebrow mb-2">Disciplinas <span className="normal-case tracking-normal text-muted-foreground">(clique duplo para ver só uma)</span></p>
+                <div className="flex flex-wrap gap-2">
+                  {subjects.map((s) => {
+                    const on = !filters.subjects.includes(s.id);
+                    return (
+                      <button key={s.id} onClick={() => toggleSubject(s.id)} onDoubleClick={() => onlySubject(s.id)} className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${on ? "" : "text-muted-foreground line-through opacity-50"}`}>
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />{s.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {hiddenCount > 0 && <button onClick={() => setFilters({ cats: [], subjects: [] })} className="text-xs font-semibold text-primary-deep">Mostrar tudo</button>}
+          </div>
+        )}
+      </div>
+
       {view === "week" ? (
         <div className="grid gap-3 md:grid-cols-7">
           {days.map((d) => {
-            const list = items.filter((i) => isSameDay(i.date, d));
+            const list = dayItems(d);
+            const hol = holidaysOn(d);
             const isToday = isSameDay(d, today);
             return (
-              <div key={d.toISOString()} className={`min-h-32 rounded-2xl border p-3 ${isToday ? "border-primary bg-accent/40" : ""}`}>
+              <div key={d.toISOString()} className={`min-h-32 rounded-2xl border p-3 ${isToday ? "border-primary bg-accent/40" : hol.length ? "bg-muted/70" : ""}`}>
                 <div className="mb-2 flex items-baseline gap-2 md:block">
                   <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{format(d, "EEE", { locale: ptBR })}</div>
-                  <div className={`text-2xl font-bold ${isToday ? "text-primary-deep" : ""}`}>{format(d, "d")}</div>
+                  <div className={`text-2xl font-bold ${isToday ? "text-primary-deep" : hol.length ? "text-muted-foreground" : ""}`}>{format(d, "d")}</div>
+                  {hol.length > 0 && <div className="truncate text-[11px] italic text-muted-foreground" title={hol.map((h) => h.title).join(" / ")}>{hol[0]!.title.split(" · ")[0]}</div>}
                 </div>
                 <div className="space-y-1.5">{list.map((i) => <Chip key={i.source + i.id} it={i} />)}</div>
               </div>
@@ -145,10 +232,14 @@ function Calendario() {
           <div className="grid grid-cols-7 border-b bg-muted">{["seg", "ter", "qua", "qui", "sex", "sáb", "dom"].map((w) => <div key={w} className="p-2 text-center font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{w}</div>)}</div>
           <div className="grid grid-cols-7">
             {days.map((d) => {
-              const list = items.filter((i) => isSameDay(i.date, d));
+              const list = dayItems(d);
+              const hol = holidaysOn(d);
               return (
-                <div key={d.toISOString()} className={`min-h-20 border-b border-r p-1.5 md:min-h-28 ${isSameMonth(d, cursor) ? "" : "bg-muted/50 text-muted-foreground"}`}>
-                  <div className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${isSameDay(d, today) ? "bg-primary text-primary-foreground" : ""}`}>{format(d, "d")}</div>
+                <div key={d.toISOString()} className={`min-h-20 border-b border-r p-1.5 md:min-h-28 ${!isSameMonth(d, cursor) ? "bg-muted/50 text-muted-foreground" : hol.length ? "bg-muted/70" : ""}`}>
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <div className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${isSameDay(d, today) ? "bg-primary text-primary-foreground" : ""}`}>{format(d, "d")}</div>
+                    {hol.length > 0 && <span className="hidden truncate text-[10px] italic text-muted-foreground md:inline" title={hol.map((h) => h.title).join(" / ")}>{hol[0]!.title.split(" · ")[0]}</span>}
+                  </div>
                   <div className="hidden space-y-1 md:block">{list.slice(0, 3).map((i) => <Chip key={i.source + i.id} it={i} compact />)}{list.length > 3 && <div className="text-[10px] text-muted-foreground">+{list.length - 3}</div>}</div>
                   <div className="flex gap-0.5 md:hidden">{list.map((i) => <span key={i.source + i.id} className="h-1.5 w-1.5 rounded-full" style={{ background: i.color }} />)}</div>
                 </div>
@@ -158,7 +249,8 @@ function Calendario() {
         </div>
       )}
       <div className="mt-6 flex flex-wrap gap-5 text-xs text-muted-foreground">
-        <span className="flex items-center gap-2"><span className="h-3 w-5 rounded bg-primary-deep" /> Compromisso fixo (cor da disciplina)</span>
+        <span className="flex items-center gap-2"><span className="h-3 w-5 rounded bg-primary-deep" /> Compromisso fixo (cor da disciplina; sem disciplina: verde-escuro)</span>
+        <span className="flex items-center gap-2"><span className="h-3 w-5 rounded bg-muted ring-1 ring-border" /> Feriado / dia sem aula</span>
         <span className="flex items-center gap-2"><span className="h-3 w-5 rounded border-2 border-dashed border-primary/60" /> Meta flexível</span>
       </div>
     </>

@@ -3,13 +3,14 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { AlertCircle, CalendarCheck, FileText, Loader2, RotateCw } from "lucide-react";
+import { AlertCircle, CalendarCheck, FileText, Loader2, MessageSquare, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { Dropzone } from "@/components/despejo/Dropzone";
 import { CronogramaReview, MaterialReview, discardDump } from "@/components/despejo/Review";
-import { analyzeDump } from "@/lib/despejo.functions";
+import { TextReview } from "@/components/despejo/TextReview";
+import { analyzeDump, interpretText } from "@/lib/despejo.functions";
 import { useTable, type Dump } from "@/lib/data";
 
 export const Route = createFileRoute("/_authenticated/despejo")({
@@ -27,14 +28,14 @@ function Despejo() {
 
   return (
     <>
-      <PageHeader eyebrow="Área de despejo" title={<>Jogue aqui. <strong className="font-bold">A IA organiza.</strong></>} desc="Cronogramas viram avaliações no calendário. Materiais de estudo vão para a disciplina e o tópico certos." />
+      <PageHeader eyebrow="Área de despejo" title={<>Jogue aqui. <strong className="font-bold">A IA organiza.</strong></>} desc="Cronogramas viram avaliações no calendário. Materiais vão para a disciplina certa. E você pode simplesmente escrever: “prova de DS adiada uma semana”." />
       <Dropzone />
       {pending.map((d) => (
         <section key={d.id} className="mt-10 rounded-3xl border bg-background p-6 md:p-8">
-          <p className="eyebrow">{d.doc_type === "cronograma" ? "Revise o cronograma" : "Confirme o material"}</p>
-          <h2 className="mt-2 text-2xl font-light">{d.file_name}</h2>
-          {(d.result as any)?.reason && <p className="mb-6 mt-1 text-sm text-muted-foreground">{(d.result as any).reason}</p>}
-          {d.doc_type === "cronograma" ? <CronogramaReview dump={d} subjects={subjects} topics={topics} /> : <MaterialReview dump={d} subjects={subjects} topics={topics} />}
+          <p className="eyebrow">{d.doc_type === "texto" ? "A IA sugere" : d.doc_type === "cronograma" ? "Revise o cronograma" : "Confirme o material"}</p>
+          <h2 className="mb-6 mt-2 text-2xl font-light">{d.doc_type === "texto" ? `“${d.file_name}”` : d.file_name}</h2>
+          {d.doc_type !== "texto" && (d.result as any)?.reason && <p className="-mt-5 mb-6 text-sm text-muted-foreground">{(d.result as any).reason}</p>}
+          {d.doc_type === "texto" ? <TextReview dump={d} /> : d.doc_type === "cronograma" ? <CronogramaReview dump={d} subjects={subjects} topics={topics} /> : <MaterialReview dump={d} subjects={subjects} topics={topics} />}
         </section>
       ))}
       <section className="mt-14">
@@ -50,20 +51,21 @@ function Despejo() {
 function HistoryRow({ d }: { d: Dump }) {
   const qc = useQueryClient();
   const analyze = useServerFn(analyzeDump);
+  const interpret = useServerFn(interpretText);
   async function retry() {
     await supabase.from("dumps").update({ status: "analyzing", error: null }).eq("id", d.id);
     qc.invalidateQueries({ queryKey: ["dumps"] });
-    const r = await analyze({ data: { id: d.id } });
+    const r = d.doc_type === "texto" ? await interpret({ data: { id: d.id } }) : await analyze({ data: { id: d.id } });
     if (!r.ok) toast.error(r.error);
     qc.invalidateQueries({ queryKey: ["dumps"] });
   }
-  const icon = d.status === "analyzing" ? <Loader2 className="h-4 w-4 animate-spin text-primary-deep" /> : d.status === "error" ? <AlertCircle className="h-4 w-4 text-destructive" /> : d.doc_type === "cronograma" ? <CalendarCheck className="h-4 w-4 text-primary-deep" /> : <FileText className="h-4 w-4 text-primary-deep" />;
+  const icon = d.status === "analyzing" ? <Loader2 className="h-4 w-4 animate-spin text-primary-deep" /> : d.status === "error" ? <AlertCircle className="h-4 w-4 text-destructive" /> : d.doc_type === "texto" ? <MessageSquare className="h-4 w-4 text-primary-deep" /> : d.doc_type === "cronograma" ? <CalendarCheck className="h-4 w-4 text-primary-deep" /> : <FileText className="h-4 w-4 text-primary-deep" />;
   const text = d.status === "analyzing" ? "Analisando…" : d.status === "error" ? d.error : d.summary ?? d.status;
   return (
     <li className="flex items-center gap-4 p-4">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent">{icon}</div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold">{d.file_name}</div>
+        <div className="truncate text-sm font-semibold">{d.doc_type === "texto" ? `“${d.file_name}”` : d.file_name}</div>
         <div className={d.status === "error" ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>{text}</div>
       </div>
       {d.status === "error" && d.doc_type !== "desconhecido" && <button onClick={retry} className="flex items-center gap-1 text-xs font-semibold text-primary-deep"><RotateCw className="h-3.5 w-3.5" />Tentar de novo</button>}

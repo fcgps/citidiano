@@ -110,3 +110,119 @@ export const analyzeDump = createServerFn({ method: "POST" })
     await sb.from("dumps").update({ status: "review", doc_type: parsed.type, result: parsed, error: null }).eq("id", data.id);
     return { ok: true as const };
   });
+
+// ---------------------------------------------------------------------------
+// Comandos em texto na Área de despejo
+// Ex.: "prova de DS adiada uma semana", "não quero estudar cálculo hoje",
+// "quero ir pra academia 3x na semana". A IA devolve uma resposta curta e uma
+// lista de ações que o usuário confirma antes de aplicar.
+// ---------------------------------------------------------------------------
+
+const TZ = "America/Sao_Paulo";
+const isoDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);
+const localDateTime = (iso: string) => {
+  const d = new Date(iso);
+  const time = new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }).format(d);
+  const wd = new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, weekday: "short" }).format(d);
+  return `${isoDay(d)} (${wd}) ${time}`;
+};
+
+function textPrompt(text: string, ctx: string, now: string, today: string) {
+  return `Você é o assistente do CITidiano, um planejador para universitários brasileiros que também fazem outras coisas (empresa júnior CITi, estágio, academia).
+Agora é ${now} (fuso de Brasília). Hoje é ${today}.
+
+O usuário escreveu na Área de despejo:
+"""${text}"""
+
+Agenda e dados do usuário (use SOMENTE estes ids; nunca invente ids):
+${ctx}
+
+Decida o que fazer e responda SOMENTE com JSON válido, sem markdown, no formato:
+{
+  "reply": "resposta curta em português (no máximo 3 frases), amigável, explicando o PORQUÊ das sugestões",
+  "actions": [ ...zero ou mais ações abaixo... ]
+}
+
+Ações possíveis (cada uma com "label": frase curta descrevendo a ação, ex.: "Mover Prova 2 de DS para 26/11"):
+- {"type":"create_event","label":string,"title":string,"kind":"prova"|"entrega"|"citi"|"reuniao"|"estudo"|"treino"|"outro","date":"YYYY-MM-DD","time":"HH:MM","subject_id":string|null}
+- {"type":"move_event","label":string,"event_id":string,"date":"YYYY-MM-DD","time":"HH:MM"}
+- {"type":"delete_event","label":string,"event_id":string}
+- {"type":"create_assessment","label":string,"subject_id":string,"name":string,"date":"YYYY-MM-DD","kind":"prova"|"mini-prova"|"entrega"|"seminario","topics":string|null}
+- {"type":"move_assessment","label":string,"assessment_id":string,"date":"YYYY-MM-DD"}
+- {"type":"create_goal","label":string,"title":string,"kind":"weekly"|"hours","times_per_week":number|null,"target_hours":number|null,"subject_id":string|null,"deadline":"YYYY-MM-DD"|null}
+
+Regras:
+- Datas relativas ("sexta que vem", "adiada uma semana", "amanhã") são calculadas a partir de hoje ou da data atual do item.
+- Avisos de mudança ("prova adiada", "professor passou atividade para sexta") viram move_*/create_* sobre os itens existentes. Demandas, reuniões e entregas do CITi/empresa júnior usam kind "citi".
+- Se o usuário não quer estudar algo hoje: veja se há prova dessa disciplina nos próximos dias. Se a prova estiver longe, aceite e redistribua (mova os eventos de estudo de hoje ou crie sessões em outros dias). Se estiver perto (até 4 dias), negocie com gentileza: sugira uma sessão curta hoje e o resto depois, explicando o motivo.
+- Metas de rotina (academia, leitura etc.) viram create_goal. Ao distribuir treinos, prefira dias com menos provas/compromissos e diga isso na resposta (ex.: "4x nesta semana porque a próxima tem 2 provas").
+- Dúvidas simples de rotina ou treino: responda de forma geral e prática; se fizer sentido, sugira um horário (create_event kind "treino"). Se houver dor ou lesão, recomende procurar um profissional. Não monte planos de treino detalhados.
+- Se o pedido for ambíguo (ex.: não dá para saber qual prova), pergunte na "reply" e não proponha ações.
+- Nunca proponha ações sobre ids que não estão na lista. No máximo 8 ações.`;
+}
+
+export const interpretText = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => {
+    if (typeof d?.id !== "string") throw new Error("id inválido");
+    return d;
+  })
+  .handler(async ({ data, context }) => {
+    const sb = context.supabase;
+    const fail = async (msg: string) => {
+      await sb.from("dumps").update({ status: "error", error: msg }).eq("id", data.id);
+      return { ok: false as const, error: msg };
+    };
+    const { data: dump } = await sb.from("dumps").select("*").eq("id", data.id).single();
+    if (!dump) return { ok: false as const, error: "Item não encontrado." };
+    const text = String((dump.result as any)?.text ?? dump.file_name).slice(0, 1000);
+    const key = process.env["GEMINI_API_KEY"];
+    if (!key) return fail("A chave da IA não está configurada.");
+
+    const now = new Date();
+    const today = isoDay(now);
+    const from = isoDay(new Date(now.getTime() - 14 * 864e5));
+    const to = isoDay(new Date(now.getTime() + 150 * 864e5));
+    const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }] = await Promise.all([
+      sb.from("subjects").select("id,name"),
+      sb.from("assessments").select("id,name,date,kind,subject_id").gte("date", from).lte("date", to).order("date"),
+      sb.from("events").select("id,title,kind,starts_at,subject_id").gte("starts_at", new Date(now.getTime() - 864e5).toISOString()).lte("starts_at", new Date(now.getTime() + 60 * 864e5).toISOString()).order("starts_at"),
+      sb.from("goals").select("id,title,kind,times_per_week,target_hours,deadline,subject_id"),
+    ]);
+    const sName = (id: string | null) => (subjects ?? []).find((s) => s.id === id)?.name ?? "";
+    const ctx = [
+      "Disciplinas:", ...((subjects ?? []).map((s) => `- ${s.id}: ${s.name}`)), (subjects ?? []).length ? "" : "(nenhuma)",
+      "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.id}: ${a.date} [${a.kind}] ${a.name} — ${sName(a.subject_id)}`)), (assessments ?? []).length ? "" : "(nenhuma)",
+      "Compromissos (próximos 60 dias):", ...((events ?? []).map((e) => `- ${e.id}: ${localDateTime(e.starts_at)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)}` : ""}`)), (events ?? []).length ? "" : "(nenhum)",
+      "Metas flexíveis:", ...((goals ?? []).map((g) => `- ${g.id}: ${g.title} (${g.kind === "weekly" ? `${g.times_per_week}x/semana` : `${g.target_hours}h`})`)), (goals ?? []).length ? "" : "(nenhuma)",
+    ].join("\n");
+    const nowLabel = new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(now);
+
+    let res: Response;
+    try {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: textPrompt(text, ctx, nowLabel, today) }] }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
+        }),
+      });
+    } catch (e) {
+      console.error(e);
+      return fail("Não consegui falar com a IA. Tente de novo em instantes.");
+    }
+    if (!res.ok) {
+      console.error("Gemini", res.status, await res.text());
+      if (res.status === 429) return fail("A IA está sobrecarregada agora. Tente de novo em um minuto.");
+      if (res.status === 403 || res.status === 401) return fail("A chave da IA foi recusada. Verifique a chave do Gemini.");
+      return fail(`A IA teve um problema ao entender sua mensagem (erro ${res.status}). Tente de novo.`);
+    }
+    const body = (await res.json()) as any;
+    const out: string = body?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
+    let parsed: any;
+    try { parsed = JSON.parse(out.replace(/^```json\s*|```$/g, "")); } catch { return fail("A IA respondeu de um jeito inesperado. Tente de novo."); }
+    const actions = Array.isArray(parsed?.actions) ? parsed.actions.slice(0, 8) : [];
+    await sb.from("dumps").update({ status: "review", doc_type: "texto", result: { text, reply: String(parsed?.reply ?? ""), actions }, error: null }).eq("id", data.id);
+    return { ok: true as const };
+  });

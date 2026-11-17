@@ -65,6 +65,6 @@ export function useRemove(table: TableName) {
 }
 
 export const EVENT_KINDS: Record<string, string> = {
-  prova: "Prova", entrega: "Entrega", reuniao: "Reunião", feriado: "Sem aula", outro: "Outro",
+  prova: "Prova", entrega: "Entrega", citi: "Demanda CITi", reuniao: "Reunião", estudo: "Estudo", treino: "Treino", feriado: "Sem aula", outro: "Outro",
 };
 export const SUBJECT_COLORS = ["#00C853", "#0EA5A4", "#2563EB", "#F59E0B", "#EF4444", "#A855F7", "#111827"];
