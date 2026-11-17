@@ -16,20 +16,35 @@ export const Route = createFileRoute("/_authenticated/calendario")({
   component: Calendario,
 });
 
-type Cat = "prova" | "extra" | "entrega" | "citi" | "rotina" | "compromisso" | "feriado";
+type Cat = "prova" | "mini" | "lista" | "extra" | "entrega" | "citi" | "rotina" | "compromisso" | "feriado";
 type Item = { id: string; title: string; date: Date; time?: string; color: string; kind: string; cat: Cat; subjectId: string | null; source: "event" | "assessment" };
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "prova", label: "Provas" },
+  { id: "mini", label: "Mini-provas" },
+  { id: "lista", label: "Listas e APS" },
   { id: "extra", label: "Finais e 2ª chamada" },
-  { id: "entrega", label: "Entregas" },
+  { id: "entrega", label: "Outras entregas" },
   { id: "citi", label: "Demandas CITi" },
   { id: "rotina", label: "Estudo e treino" },
   { id: "compromisso", label: "Outros compromissos" },
   { id: "feriado", label: "Feriados" },
 ];
 
-function eventCat(kind: string): Cat {
+const MINI_RE = /mini[\s-]?prova/i;
+// Listas de exercício, APS e atividades ("Exercício Escolar" da UFPE é prova, não lista)
+const LISTA_RE = /\blistas?\b|\baps\b|atividade/i;
+
+function assessmentCat(a: { kind: string; name: string }): Cat {
+  if (isExtraAssessment(a)) return "extra";
+  if (a.kind === "mini-prova" || MINI_RE.test(a.name)) return "mini";
+  if (LISTA_RE.test(a.name)) return "lista";
+  return a.kind === "seminario" || a.kind === "entrega" ? "entrega" : "prova";
+}
+
+function eventCat(kind: string, title = ""): Cat {
+  if ((kind === "prova" || kind === "entrega") && MINI_RE.test(title)) return "mini";
+  if ((kind === "prova" || kind === "entrega") && LISTA_RE.test(title)) return "lista";
   if (kind === "prova" || kind === "entrega" || kind === "citi" || kind === "feriado") return kind;
   if (kind === "estudo" || kind === "treino") return "rotina";
   return "compromisso";
@@ -122,8 +137,8 @@ function Calendario() {
   const subj = (id: string | null) => subjects.find((s) => s.id === id);
 
   const items: Item[] = useMemo(() => [
-    ...events.map((e) => { const d = parseISO(e.starts_at); return { id: e.id, title: e.title, date: d, time: format(d, "HH:mm"), color: subj(e.subject_id)?.color ?? KIND_COLORS[e.kind] ?? "#0F5132", kind: e.kind, cat: eventCat(e.kind), subjectId: e.subject_id, source: "event" as const }; }),
-    ...assessments.map((a) => { const kind = a.kind === "seminario" || a.kind === "entrega" ? "entrega" : "prova"; return { id: a.id, title: `${a.name} · ${subj(a.subject_id)?.name ?? ""}`, date: parseISO(a.date), color: subj(a.subject_id)?.color ?? "#00C853", kind, cat: (isExtraAssessment(a) ? "extra" : kind) as Cat, subjectId: a.subject_id, source: "assessment" as const }; }),
+    ...events.map((e) => { const d = parseISO(e.starts_at); return { id: e.id, title: e.title, date: d, time: format(d, "HH:mm"), color: subj(e.subject_id)?.color ?? KIND_COLORS[e.kind] ?? "#0F5132", kind: e.kind, cat: eventCat(e.kind, e.title), subjectId: e.subject_id, source: "event" as const }; }),
+    ...assessments.map((a) => { const kind = a.kind === "seminario" || a.kind === "entrega" ? "entrega" : "prova"; return { id: a.id, title: `${a.name} · ${subj(a.subject_id)?.name ?? ""}`, date: parseISO(a.date), color: subj(a.subject_id)?.color ?? "#00C853", kind, cat: assessmentCat(a), subjectId: a.subject_id, source: "assessment" as const }; }),
   ].sort((a, b) => a.date.getTime() - b.date.getTime()), [events, assessments, subjects]);
 
   // Filtros: começa mostrando tudo; o que o usuário esconder fica salvo no navegador
