@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,19 +20,31 @@ export const Route = createFileRoute("/_authenticated/despejo")({
 });
 
 function Despejo() {
-  const { data: dumps = [] } = useTable("dumps");
+  const { data: dumps = [], isSuccess: dumpsLoaded } = useTable("dumps");
   const { data: subjects = [] } = useTable("subjects");
   const { data: topics = [] } = useTable("topics");
   const list = [...dumps].reverse();
   const pending = list.filter((d) => d.status === "review");
   const history = list.filter((d) => d.status !== "review");
 
+  // Quando chega uma sugestão nova da IA, rola a página até ela
+  const firstPending = useRef<HTMLElement>(null);
+  const seen = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!dumpsLoaded) return;
+    const ids = pending.map((d) => d.id);
+    if (seen.current === null) { seen.current = new Set(ids); return; } // primeira carga: não rola
+    const isNew = ids.some((id) => !seen.current!.has(id));
+    ids.forEach((id) => seen.current!.add(id));
+    if (isNew) firstPending.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [dumpsLoaded, pending.map((d) => d.id).join(",")]);
+
   return (
     <>
       <PageHeader eyebrow="Área de despejo" title={<>Jogue aqui. <strong className="font-bold">A IA organiza.</strong></>} desc="Cronogramas viram avaliações no calendário. Materiais vão para a disciplina certa. E você pode simplesmente escrever: “prova de DS adiada uma semana”." />
       <Dropzone />
-      {pending.map((d) => (
-        <section key={d.id} className="mt-10 rounded-3xl border bg-background p-6 md:p-8">
+      {pending.map((d, i) => (
+        <section key={d.id} ref={i === 0 ? firstPending : undefined} className="mt-10 scroll-mt-24 rounded-3xl border bg-background p-6 md:p-8">
           <p className="eyebrow">{d.doc_type === "texto" ? "A IA sugere" : d.doc_type === "cronograma" ? "Revise o cronograma" : "Confirme o material"}</p>
           <h2 className="mb-6 mt-2 text-2xl font-light">{d.doc_type === "texto" ? `“${d.file_name}”` : d.file_name}</h2>
           {d.doc_type !== "texto" && (d.result as any)?.reason && <p className="-mt-5 mb-6 text-sm text-muted-foreground">{(d.result as any).reason}</p>}
