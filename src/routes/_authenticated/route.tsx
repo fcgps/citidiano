@@ -1,8 +1,8 @@
-import { createFileRoute, Link, Outlet, redirect, useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, BookOpen, CalendarDays, FolderOpen, LogOut, Sparkles } from "lucide-react";
+import { createFileRoute, Link, Outlet, redirect } from "@tanstack/react-router";
+import { LayoutDashboard, BookOpen, CalendarDays, FolderOpen, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/Logo";
+import { AccountMenu } from "@/components/AccountMenu";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -23,13 +23,7 @@ const nav = [
 ] as const;
 
 function Shell() {
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  async function signOut() {
-    await qc.cancelQueries(); qc.clear();
-    await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
-  }
+  const { user } = Route.useRouteContext();
   return (
     <div className="relative min-h-screen overflow-x-clip bg-background">
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-0 overflow-hidden">
@@ -39,7 +33,11 @@ function Shell() {
       </div>
       <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-          <Link to="/painel"><Logo /></Link>
+          <div className="flex items-center gap-3">
+            {/* Conta: configurações (tema), trocar/adicionar conta e sair */}
+            <AccountMenu email={user.email ?? "Conta"} userId={user.id} />
+            <Link to="/painel"><Logo /></Link>
+          </div>
           <nav className="hidden items-center gap-1 rounded-full border p-1 md:flex">
             {nav.map((n) => (
               <Link key={n.to} to={n.to} className="rounded-full px-4 py-1.5 text-sm font-medium text-muted-foreground transition hover:text-foreground"
@@ -48,9 +46,8 @@ function Shell() {
               </Link>
             ))}
           </nav>
-          <button onClick={signOut} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-            <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Sair</span>
-          </button>
+          {/* espaço do mesmo tamanho do lado esquerdo, para o menu ficar centralizado */}
+          <div aria-hidden className="hidden w-[180px] md:block" />
         </div>
       </header>
       <main className="relative mx-auto max-w-6xl px-5 pb-28 pt-10 md:pb-16"><Outlet /></main>

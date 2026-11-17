@@ -11,6 +11,8 @@ import {
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { applyTheme, getTheme, themeBootScript } from "@/lib/theme";
+import { rememberSession } from "@/lib/accounts";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -100,6 +102,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400;500&display=swap" },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
+    // Aplica o tema escuro antes de a página aparecer (evita piscar branco)
+    scripts: [{ children: themeBootScript }],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -109,7 +113,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
@@ -125,13 +129,24 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
   useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      // Guarda a sessão para permitir trocar de conta depois (menu da conta)
+      if (session && event !== "SIGNED_OUT") { try { rememberSession(session); } catch { /* ignora */ } }
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
     });
     return () => data.subscription.unsubscribe();
   }, [router, queryClient]);
+
+  // Tema: aplica a escolha salva e acompanha o sistema quando a opção é "Igual ao sistema"
+  useEffect(() => {
+    applyTheme();
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => getTheme() === "system" && applyTheme("system");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
