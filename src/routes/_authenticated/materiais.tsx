@@ -46,7 +46,7 @@ function Materiais() {
   }
   async function open(m: Material) {
     const { data, error } = await supabase.storage.from("materiais").createSignedUrl(m.path, 60);
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     window.open(data.signedUrl, "_blank");
   }
   async function remove(m: Material) {

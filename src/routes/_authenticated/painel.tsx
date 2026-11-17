@@ -1,9 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Sparkles, ArrowUpRight } from "lucide-react";
 import { addDays, differenceInCalendarDays, endOfWeek, format, isWithinInterval, parseISO, startOfDay, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { PageHeader, Stat } from "@/components/PageHeader";
 import { GoalCard } from "@/components/GoalCard";
+import { Dropzone } from "@/components/despejo/Dropzone";
 import { useTable, EVENT_KINDS } from "@/lib/data";
 
 export const Route = createFileRoute("/_authenticated/painel")({
@@ -18,6 +19,7 @@ const RECS = [
 ];
 
 function Painel() {
+  const navigate = useNavigate();
   const { data: assessments = [] } = useTable("assessments");
   const { data: events = [] } = useTable("events");
   const { data: subjects = [] } = useTable("subjects");
@@ -37,6 +39,10 @@ function Painel() {
   return (
     <>
       <PageHeader eyebrow={format(today, "EEEE, d 'de' MMMM", { locale: ptBR })} title={<>Sua semana, <strong className="font-bold">em perspectiva.</strong></>} />
+      <div className="mb-12">
+        <div className="mb-3 flex items-baseline justify-between"><p className="eyebrow">Área de despejo</p><Link to="/despejo" className="text-sm font-semibold text-primary-deep">Ver histórico e revisões</Link></div>
+        <Dropzone compact onDone={() => navigate({ to: "/despejo" })} />
+      </div>
       <div className="mb-14 grid grid-cols-2 gap-8 border-y py-8 md:grid-cols-4">
         <Stat value={thisWeek} label={thisWeek === 1 ? "prova/entrega esta semana" : "provas e entregas esta semana"} />
         <Stat value={eventsWeek} label="compromissos na semana" />

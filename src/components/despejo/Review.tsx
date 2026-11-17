@@ -52,7 +52,7 @@ export function CronogramaReview({ dump, subjects, topics }: { dump: Dump; subje
       if (sid) {
         if (prof.trim()) await supabase.from("subjects").update({ professor: prof.trim() }).eq("id", sid);
       } else {
-        const { data, error } = await supabase.from("subjects").insert({ name: name.trim().slice(0, 120), professor: prof.trim() || null, color: SUBJECT_COLORS[subjects.length % SUBJECT_COLORS.length] }).select("id").single();
+        const { data, error } = await supabase.from("subjects").insert({ name: name.trim().slice(0, 120), professor: prof.trim() || null, color: SUBJECT_COLORS[subjects.length % SUBJECT_COLORS.length]! }).select("id").single();
         if (error) throw error; sid = data.id;
       }
       if (keep.length) {
@@ -161,7 +161,7 @@ export function MaterialReview({ dump, subjects, topics }: { dump: Dump; subject
       let subjectName = subjects.find((s) => s.id === subjectId)?.name;
       if (sid === "__new") {
         if (!newSubject.trim()) { toast.error("Dê um nome à nova disciplina."); return; }
-        const { data, error } = await supabase.from("subjects").insert({ name: newSubject.trim().slice(0, 120), color: SUBJECT_COLORS[subjects.length % SUBJECT_COLORS.length] }).select("id").single();
+        const { data, error } = await supabase.from("subjects").insert({ name: newSubject.trim().slice(0, 120), color: SUBJECT_COLORS[subjects.length % SUBJECT_COLORS.length]! }).select("id").single();
         if (error) throw error; subjectId = data.id; subjectName = newSubject.trim();
       }
       let topicId: string | null = tid && tid !== "__new" ? tid : null;
