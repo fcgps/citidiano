@@ -214,7 +214,7 @@ export function MaterialReview({ dump, subjects, topics }: { dump: Dump; subject
       }
       const { error } = await supabase.from("materials").insert({ name: (title.trim() || dump.file_name).slice(0, 200), path: dump.path, mime: dump.mime, size: dump.size, subject_id: subjectId, topic_id: topicId });
       if (error) throw error;
-      await finish(dump.id, `“${title.trim()}” → Materiais${subjectName ? ` de ${subjectName}` : ""}${topicName ? ` · ${topicName}` : ""}`, qc);
+      await finish(dump.id, `“${title.trim()}” → materiais de ${subjectName ?? "uma disciplina"}${topicName ? ` · ${topicName}` : ""}`, qc);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não consegui salvar.");
     } finally { setSaving(false); }
@@ -226,7 +226,7 @@ export function MaterialReview({ dump, subjects, topics }: { dump: Dump; subject
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block text-sm font-medium">Disciplina<Missing show={!validSid && !m.new_subject_name} />
           <select className={cn(field, "mt-1.5", !sid && missing)} value={sid} onChange={(e) => { setSid(e.target.value); setTid(""); }}>
-            <option value="">Sem disciplina</option>
+            <option value="" disabled>Escolha a disciplina</option>
             {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             <option value="__new">+ Criar nova disciplina</option>
           </select>
@@ -244,7 +244,7 @@ export function MaterialReview({ dump, subjects, topics }: { dump: Dump; subject
       </div>
       <div className="flex flex-wrap justify-end gap-3">
         <Button variant="ghost" className="rounded-full" onClick={() => discardDump(dump, qc)}>Descartar</Button>
-        <Button className="rounded-full shadow-glow" disabled={saving} onClick={save}><Check className="mr-1 h-4 w-4" />{saving ? "Salvando…" : "Confirmar"}</Button>
+        <Button className="rounded-full shadow-glow" disabled={saving || !sid || (sid === "__new" && !newSubject.trim())} onClick={save}><Check className="mr-1 h-4 w-4" />{saving ? "Salvando…" : "Confirmar"}</Button>
       </div>
     </div>
   );

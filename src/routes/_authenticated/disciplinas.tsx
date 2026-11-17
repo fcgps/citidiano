@@ -236,7 +236,7 @@ function SubjectSheet({ s, onClose }: { s: Subject; onClose: () => void }) {
 
       {/* Materiais da disciplina */}
       <section className="mt-10">
-        <div className="mb-3 flex items-baseline justify-between"><p className="eyebrow">Materiais · {files.length}</p><Link to="/materiais" className="text-sm font-semibold text-primary-deep">Ver todos</Link></div>
+        <div className="mb-3 flex items-baseline justify-between"><p className="eyebrow">Materiais · {files.length}</p></div>
         {files.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum material. Jogue slides e listas na <Link to="/despejo" className="font-semibold text-primary-deep">Área de despejo</Link> que a IA organiza aqui.</p> : (
           <div className="space-y-4">
             {groups.map((g) => (

@@ -41,7 +41,7 @@ function Despejo() {
 
   return (
     <>
-      <PageHeader eyebrow="Área de despejo" title={<>Jogue aqui. <strong className="font-bold">A IA organiza.</strong></>} desc="Cronogramas viram avaliações no calendário. Materiais vão para a disciplina certa. E você pode simplesmente escrever: “prova de DS adiada uma semana”." />
+      <PageHeader eyebrow="Área de despejo" title={<>Jogue aqui. <strong className="font-bold">A IA organiza.</strong></>} desc="Cronogramas viram avaliações no calendário. Slides e listas vão para os materiais da disciplina certa. E você pode simplesmente escrever: “prova de DS adiada uma semana”." />
       <Dropzone />
       {pending.map((d, i) => (
         <section key={d.id} ref={i === 0 ? firstPending : undefined} className="mt-10 scroll-mt-24 rounded-3xl border bg-background p-6 md:p-8">
