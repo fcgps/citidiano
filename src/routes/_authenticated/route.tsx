@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, BookOpen, CalendarDays, FolderOpen, LogOut } from "lucide-react";
+import { LayoutDashboard, BookOpen, CalendarDays, FolderOpen, LogOut, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/Logo";
 
@@ -16,6 +16,7 @@ export const Route = createFileRoute("/_authenticated")({
 
 const nav = [
   { to: "/painel", label: "Painel", icon: LayoutDashboard },
+  { to: "/despejo", label: "Despejo", icon: Sparkles },
   { to: "/disciplinas", label: "Disciplinas", icon: BookOpen },
   { to: "/calendario", label: "Calendário", icon: CalendarDays },
   { to: "/materiais", label: "Materiais", icon: FolderOpen },
@@ -30,7 +31,12 @@ function Shell() {
     navigate({ to: "/auth", replace: true });
   }
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative min-h-screen overflow-x-clip bg-background">
+      <div aria-hidden className="pointer-events-none fixed inset-0 -z-0 overflow-hidden">
+        <div className="blob -right-40 -top-40 h-[28rem] w-[28rem]" />
+        <div className="blob -bottom-48 -left-40 h-[26rem] w-[26rem] opacity-60" />
+        <div className="blob right-[-10rem] top-[55%] h-72 w-72 opacity-40" />
+      </div>
       <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
           <Link to="/painel"><Logo /></Link>
@@ -47,8 +53,8 @@ function Shell() {
           </button>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-5 pb-28 pt-10 md:pb-16"><Outlet /></main>
-      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 rounded-2xl border bg-background/95 p-1 shadow-lg backdrop-blur md:hidden">
+      <main className="relative mx-auto max-w-6xl px-5 pb-28 pt-10 md:pb-16"><Outlet /></main>
+      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 rounded-2xl border bg-background/95 p-1 shadow-lg backdrop-blur md:hidden">
         {nav.map((n) => (
           <Link key={n.to} to={n.to} className="flex flex-col items-center gap-0.5 rounded-xl py-2 text-[11px] text-muted-foreground"
             activeProps={{ className: "bg-accent !text-accent-foreground" }}>

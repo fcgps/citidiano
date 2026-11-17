@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedCalendarioRouteImport } from './routes/_authenticated/calendario'
+import { Route as AuthenticatedDespejoRouteImport } from './routes/_authenticated/despejo'
 import { Route as AuthenticatedDisciplinasRouteImport } from './routes/_authenticated/disciplinas'
 import { Route as AuthenticatedMateriaisRouteImport } from './routes/_authenticated/materiais'
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
@@ -36,6 +37,11 @@ const AuthenticatedCalendarioRoute = AuthenticatedCalendarioRouteImport.update({
   path: '/calendario',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedDespejoRoute = AuthenticatedDespejoRouteImport.update({
+  id: '/despejo',
+  path: '/despejo',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDisciplinasRoute =
   AuthenticatedDisciplinasRouteImport.update({
     id: '/disciplinas',
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/calendario': typeof AuthenticatedCalendarioRoute
+  '/despejo': typeof AuthenticatedDespejoRoute
   '/disciplinas': typeof AuthenticatedDisciplinasRoute
   '/materiais': typeof AuthenticatedMateriaisRoute
   '/painel': typeof AuthenticatedPainelRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/calendario': typeof AuthenticatedCalendarioRoute
+  '/despejo': typeof AuthenticatedDespejoRoute
   '/disciplinas': typeof AuthenticatedDisciplinasRoute
   '/materiais': typeof AuthenticatedMateriaisRoute
   '/painel': typeof AuthenticatedPainelRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/calendario': typeof AuthenticatedCalendarioRoute
+  '/_authenticated/despejo': typeof AuthenticatedDespejoRoute
   '/_authenticated/disciplinas': typeof AuthenticatedDisciplinasRoute
   '/_authenticated/materiais': typeof AuthenticatedMateriaisRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
@@ -82,15 +91,29 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/auth' | '/calendario' | '/disciplinas' | '/materiais' | '/painel'
+    | '/'
+    | '/auth'
+    | '/calendario'
+    | '/despejo'
+    | '/disciplinas'
+    | '/materiais'
+    | '/painel'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/calendario' | '/disciplinas' | '/materiais' | '/painel'
+  to:
+    | '/'
+    | '/auth'
+    | '/calendario'
+    | '/despejo'
+    | '/disciplinas'
+    | '/materiais'
+    | '/painel'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/calendario'
+    | '/_authenticated/despejo'
     | '/_authenticated/disciplinas'
     | '/_authenticated/materiais'
     | '/_authenticated/painel'
@@ -132,6 +155,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCalendarioRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/despejo': {
+      id: '/_authenticated/despejo'
+      path: '/despejo'
+      fullPath: '/despejo'
+      preLoaderRoute: typeof AuthenticatedDespejoRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/disciplinas': {
       id: '/_authenticated/disciplinas'
       path: '/disciplinas'
@@ -158,6 +188,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedCalendarioRoute: typeof AuthenticatedCalendarioRoute
+  AuthenticatedDespejoRoute: typeof AuthenticatedDespejoRoute
   AuthenticatedDisciplinasRoute: typeof AuthenticatedDisciplinasRoute
   AuthenticatedMateriaisRoute: typeof AuthenticatedMateriaisRoute
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
@@ -165,6 +196,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCalendarioRoute: AuthenticatedCalendarioRoute,
+  AuthenticatedDespejoRoute: AuthenticatedDespejoRoute,
   AuthenticatedDisciplinasRoute: AuthenticatedDisciplinasRoute,
   AuthenticatedMateriaisRoute: AuthenticatedMateriaisRoute,
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,

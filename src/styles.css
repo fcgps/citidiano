@@ -135,3 +135,5 @@
 @utility shadow-glow { box-shadow: var(--shadow-glow); }
 @utility text-gradient { background-image: var(--gradient-primary); -webkit-background-clip: text; background-clip: text; color: transparent; }
 @utility eyebrow { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--primary-deep); font-weight: 500; }
+
+@utility blob { position: absolute; border-radius: 9999px; background: radial-gradient(circle at 30% 30%, oklch(0.85 0.17 148 / 0.45), oklch(0.6 0.13 165 / 0.18) 55%, transparent 72%); filter: blur(60px); }

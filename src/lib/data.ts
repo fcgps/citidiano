@@ -9,10 +9,12 @@ export type Assessment = T["assessments"]["Row"];
 export type EventRow = T["events"]["Row"];
 export type Goal = T["goals"]["Row"];
 export type Material = T["materials"]["Row"];
-type TableName = "subjects" | "assessments" | "events" | "goals" | "materials";
+export type Topic = T["topics"]["Row"];
+export type Dump = T["dumps"]["Row"];
+type TableName = "subjects" | "assessments" | "events" | "goals" | "materials" | "topics" | "dumps";
 
 const orderBy: Record<TableName, string> = {
-  subjects: "name", assessments: "date", events: "starts_at", goals: "created_at", materials: "created_at",
+  subjects: "name", assessments: "date", events: "starts_at", goals: "created_at", materials: "created_at", topics: "name", dumps: "created_at",
 };
 
 export function useTable<K extends TableName>(table: K) {
@@ -63,6 +65,6 @@ export function useRemove(table: TableName) {
 }
 
 export const EVENT_KINDS: Record<string, string> = {
-  prova: "Prova", entrega: "Entrega", reuniao: "Reunião", outro: "Outro",
+  prova: "Prova", entrega: "Entrega", reuniao: "Reunião", feriado: "Sem aula", outro: "Outro",
 };
 export const SUBJECT_COLORS = ["#00C853", "#0EA5A4", "#2563EB", "#F59E0B", "#EF4444", "#A855F7", "#111827"];

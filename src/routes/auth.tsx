@@ -35,17 +35,17 @@ function AuthPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (password.length < 6) return toast.error("A senha precisa ter pelo menos 6 caracteres.");
+    if (password.length < 6) { toast.error("A senha precisa ter pelo menos 6 caracteres."); return; }
     setLoading(true);
     if (mode === "login") {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       setLoading(false);
-      if (error) return toast.error("E-mail ou senha inválidos.");
+      if (error) { toast.error("E-mail ou senha inválidos."); return; }
       navigate({ to: "/painel" });
     } else {
       const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin + "/painel" } });
       setLoading(false);
-      if (error) return toast.error(error.message);
+      if (error) { toast.error(error.message); return; }
       if (data.session) navigate({ to: "/painel" }); else setSent(true);
     }
   }

@@ -92,7 +92,7 @@ function Calendario() {
 
   const items: Item[] = useMemo(() => [
     ...events.map((e) => { const d = parseISO(e.starts_at); return { id: e.id, title: e.title, date: d, time: format(d, "HH:mm"), color: subj(e.subject_id)?.color ?? "#0F5132", kind: e.kind, source: "event" as const }; }),
-    ...assessments.map((a) => ({ id: a.id, title: `${a.name} · ${subj(a.subject_id)?.name ?? ""}`, date: parseISO(a.date), color: subj(a.subject_id)?.color ?? "#00C853", kind: "prova", source: "assessment" as const })),
+    ...assessments.map((a) => ({ id: a.id, title: `${a.name} · ${subj(a.subject_id)?.name ?? ""}`, date: parseISO(a.date), color: subj(a.subject_id)?.color ?? "#00C853", kind: a.kind === "seminario" || a.kind === "entrega" ? "entrega" : "prova", source: "assessment" as const })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime()), [events, assessments, subjects]);
 
   const start = view === "week" ? startOfWeek(cursor, { weekStartsOn: 1 }) : startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 });

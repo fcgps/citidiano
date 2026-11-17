@@ -19,6 +19,7 @@ export type Database = {
           created_at: string
           date: string
           id: string
+          kind: string
           name: string
           subject_id: string
           topics: string | null
@@ -28,6 +29,7 @@ export type Database = {
           created_at?: string
           date: string
           id?: string
+          kind?: string
           name: string
           subject_id: string
           topics?: string | null
@@ -37,6 +39,7 @@ export type Database = {
           created_at?: string
           date?: string
           id?: string
+          kind?: string
           name?: string
           subject_id?: string
           topics?: string | null
@@ -51,6 +54,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      dumps: {
+        Row: {
+          created_at: string
+          doc_type: string | null
+          error: string | null
+          file_name: string
+          id: string
+          mime: string | null
+          path: string
+          result: Json | null
+          size: number | null
+          status: string
+          summary: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          doc_type?: string | null
+          error?: string | null
+          file_name: string
+          id?: string
+          mime?: string | null
+          path: string
+          result?: Json | null
+          size?: number | null
+          status?: string
+          summary?: string | null
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          doc_type?: string | null
+          error?: string | null
+          file_name?: string
+          id?: string
+          mime?: string | null
+          path?: string
+          result?: Json | null
+          size?: number | null
+          status?: string
+          summary?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       events: {
         Row: {
@@ -149,6 +197,7 @@ export type Database = {
           path: string
           size: number | null
           subject_id: string | null
+          topic_id: string | null
           user_id: string
         }
         Insert: {
@@ -159,6 +208,7 @@ export type Database = {
           path: string
           size?: number | null
           subject_id?: string | null
+          topic_id?: string | null
           user_id?: string
         }
         Update: {
@@ -169,6 +219,7 @@ export type Database = {
           path?: string
           size?: number | null
           subject_id?: string | null
+          topic_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -177,6 +228,13 @@ export type Database = {
             columns: ["subject_id"]
             isOneToOne: false
             referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "materials_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "topics"
             referencedColumns: ["id"]
           },
         ]
@@ -207,6 +265,38 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      topics: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          subject_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          subject_id: string
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          subject_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topics_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
