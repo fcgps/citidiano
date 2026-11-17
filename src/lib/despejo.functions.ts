@@ -4,6 +4,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 const MODEL = "gemini-3.5-flash";
 // Modelo reserva, usado quando o principal está sobrecarregado (erros 500/503)
 const FALLBACK_MODEL = "gemini-3.5-flash-lite";
+// thinkingLevel "low": a IA "pensa" menos antes de responder → respostas bem mais rápidas.
+// (O padrão do 3.5 Flash é "medium", que pode demorar demais para um planejador.)
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -124,7 +126,7 @@ export const analyzeDump = createServerFn({ method: "POST" })
           { inline_data: { mime_type: dump.mime || file.type, data: toBase64(await file.arrayBuffer()) } },
           { text: prompt(today, catalog) },
         ] }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
+        generationConfig: { responseMimeType: "application/json", temperature: 0.1, thinkingConfig: { thinkingLevel: "low" } },
       });
     } catch (e) {
       console.error(e);
@@ -242,7 +244,7 @@ export const interpretText = createServerFn({ method: "POST" })
     try {
       res = await callGemini(key, {
         contents: [{ role: "user", parts: [{ text: textPrompt(text, ctx, nowLabel, today) }] }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
+        generationConfig: { responseMimeType: "application/json", temperature: 0.3, thinkingConfig: { thinkingLevel: "low" } },
       });
     } catch (e) {
       console.error(e);
