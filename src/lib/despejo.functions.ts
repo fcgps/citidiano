@@ -306,6 +306,7 @@ Regras:
 - Itens fixed=true são SOMENTE compromissos que existem nos dados desta semana (provas, mini-provas, entregas, listas, demandas do CITi, reuniões, treinos/estudos já marcados). Nunca invente compromissos fixos. Não inclua aulas.
 - Avaliações [extra] (final, 2ª chamada) entram como fixed com note "Só se precisar".
 - Itens fixed=false são suas sugestões: blocos de estudo antes das provas (comece com antecedência, aumente perto da prova, cite os assuntos cobrados quando houver), treinos para cumprir as metas semanais, tempo para demandas do CITi antes dos prazos, e descanso.
+- Treinos e esportes já marcados na agenda (compromissos [treino], ex.: pelada, futebol, corrida) CONTAM para metas de atividade física da mesma semana: se a meta é academia 3x e já há 1 pelada marcada, sugira só mais 2. Diga isso na recomendação.
 - Distribua as metas semanais (ex.: academia 3x) olhando também as semanas seguintes: se a próxima semana for pesada, adiante treinos nesta; em dias de prova, prefira descanso ou treino leve. Explique isso nas recomendações.
 - Não coloque sugestões em dias que já passaram (antes de ${today}); neles, mantenha só os fixos.
 - No máximo 4 itens por dia. Deixe pelo menos um dia leve. "note" curta (até 80 caracteres) explicando o motivo da sugestão; null nos fixos sem observação.
@@ -364,10 +365,12 @@ export const planWeek = createServerFn({ method: "POST" })
 
     // Limpa a resposta: sempre 7 dias na ordem certa, tipos válidos, ids existentes
     const validSubject = (id: unknown) => (typeof id === "string" && (subjects ?? []).some((s) => s.id === id) ? id : null);
+    const today = isoDay(new Date());
     const days: PlanDay[] = Array.from({ length: 7 }, (_, i) => {
       const date = addDaysIso(from, i);
+      const past = date < today; // dias que já passaram: só compromissos fixos, nunca sugestões
       const d = (Array.isArray(parsed?.days) ? parsed.days : []).find((x: any) => x?.date === date) ?? {};
-      const items: PlanItem[] = (Array.isArray(d.items) ? d.items : []).slice(0, 5).filter((it: any) => it && typeof it.title === "string").map((it: any) => ({
+      const items: PlanItem[] = (Array.isArray(d.items) ? d.items : []).slice(0, 5).filter((it: any) => it && typeof it.title === "string" && (!past || it.fixed)).map((it: any) => ({
         title: String(it.title).slice(0, 80),
         type: PLAN_TYPES.includes(it.type) ? it.type : "outro",
         fixed: !!it.fixed,
