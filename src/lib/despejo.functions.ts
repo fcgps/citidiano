@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.5-flash";
 
 function toBase64(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf);
@@ -97,7 +97,7 @@ export const analyzeDump = createServerFn({ method: "POST" })
       if (res.status === 429) return fail("A IA está sobrecarregada agora. Tente de novo em um minuto.");
       if (res.status === 400) return fail("A IA não conseguiu ler este arquivo. Ele pode estar corrompido ou ser grande demais.");
       if (res.status === 403 || res.status === 401) return fail("A chave da IA foi recusada. Verifique a chave do Gemini.");
-      return fail("A IA teve um problema ao analisar o arquivo. Tente de novo.");
+      return fail(`A IA teve um problema ao analisar o arquivo (erro ${res.status}). Tente de novo.`);
     }
     const body = (await res.json()) as any;
     const text: string = body?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
