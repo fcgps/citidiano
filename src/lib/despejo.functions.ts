@@ -60,6 +60,7 @@ Analise o arquivo anexado e responda SOMENTE com JSON válido, sem markdown.
 Primeiro identifique o tipo:
 - "cronograma": cronograma, ementa ou plano de ensino de uma disciplina (ex.: SIGAA).
 - "material": material de estudo (slides, lista de exercícios, resumo, prova antiga etc.).
+- "grade": grade de horários / rotina semanal (tabela de dias da semana × horários, como uma planilha "Rotina semanal" ou o quadro de horários do SIGAA).
 - "desconhecido": nenhum dos dois.
 
 Disciplinas e tópicos já cadastrados pelo usuário (id: nome — tópicos):
@@ -67,7 +68,7 @@ ${catalog || "(nenhuma)"}
 
 Formato:
 {
-  "type": "cronograma" | "material" | "desconhecido",
+  "type": "cronograma" | "material" | "grade" | "desconhecido",
   "reason": "frase curta explicando o que é o arquivo",
   "cronograma": null | {
     "subject_name": string|null,
@@ -77,6 +78,10 @@ Formato:
     "topics": [string],
     "conflicts": [string]
   },
+  "grade": null | {
+    "slots": [{"title": string, "subject_id": "id existente ou null", "new_subject_name": "nome se for aula de uma disciplina que não está cadastrada, senão null", "kind": "aula"|"citi"|"treino"|"outro", "weekday": 1-7 (1=segunda ... 7=domingo), "start": "HH:MM", "end": "HH:MM", "location": string|null}],
+    "ignored": ["itens que não se repetem toda semana e por isso ficaram de fora"]
+  },
   "material": null | {
     "title": "título curto (até 60 caracteres)",
     "subject_id": "id existente ou null",
@@ -85,7 +90,8 @@ Formato:
     "new_topic_name": "nome de tópico sugerido se nenhum combinar, senão null"
   }
 }
-Regras: datas sem ano assumem o semestre atual (ano de hoje; se o mês já passou muito e o documento parece do próximo semestre, use o ano coerente). Use null para o que não estiver no documento — nunca invente. Se a mesma avaliação aparecer com datas diferentes, preencha "conflict" com as opções e coloque em "date" a mais provável. Assuntos cobrados em "topics" como texto curto. Use kind "extra" para provas finais, segunda chamada, reposição e exame final (na UFPE, "Exercício Escolar Final" ou "EE Final" também é final): elas só acontecem para quem precisa.`;
+Regras: datas sem ano assumem o semestre atual (ano de hoje; se o mês já passou muito e o documento parece do próximo semestre, use o ano coerente). Use null para o que não estiver no documento — nunca invente. Se a mesma avaliação aparecer com datas diferentes, preencha "conflict" com as opções e coloque em "date" a mais provável. Assuntos cobrados em "topics" como texto curto.
+Na grade: um item por bloco de horário (se a mesma aula ocupa dois horários seguidos, junte em um só bloco com início e fim). Inclua só o que se repete toda semana (aulas, treinos, reuniões fixas, atividades da empresa júnior); tarefas pontuais como "terminar X", "começar Y" ou "entrega de Z" vão para "ignored". Use kind "aula" para disciplinas, "citi" para empresa júnior/CITi, "treino" para academia e esportes, "outro" para o resto. Use kind "extra" para provas finais, segunda chamada, reposição e exame final (na UFPE, "Exercício Escolar Final" ou "EE Final" também é final): elas só acontecem para quem precisa.`;
 }
 
 export const analyzeDump = createServerFn({ method: "POST" })
@@ -143,8 +149,8 @@ export const analyzeDump = createServerFn({ method: "POST" })
     const text: string = body?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
     let parsed: any;
     try { parsed = JSON.parse(text.replace(/^```json\s*|```$/g, "")); } catch { return fail("A IA respondeu de um jeito inesperado. Tente de novo."); }
-    if (parsed?.type === "desconhecido" || !["cronograma", "material"].includes(parsed?.type)) {
-      await sb.from("dumps").update({ status: "error", doc_type: "desconhecido", result: parsed, error: "Não parece um cronograma nem material de estudo." }).eq("id", data.id).eq("status", "analyzing");
+    if (parsed?.type === "desconhecido" || !["cronograma", "material", "grade"].includes(parsed?.type)) {
+      await sb.from("dumps").update({ status: "error", doc_type: "desconhecido", result: parsed, error: "Não parece um cronograma, uma grade de horários nem material de estudo." }).eq("id", data.id).eq("status", "analyzing");
       return { ok: false as const, error: "Não parece um cronograma nem material de estudo." };
     }
     await sb.from("dumps").update({ status: "review", doc_type: parsed.type, result: parsed, error: null }).eq("id", data.id).eq("status", "analyzing");

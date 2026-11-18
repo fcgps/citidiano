@@ -14,8 +14,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { WeeklyGrid } from "@/components/WeeklyGrid";
 import {
-  useTable, useInsert, useRemove, useUpdate, SUBJECT_COLORS, ASSESSMENT_KINDS, assessmentTag,
+  useTable, useInsert, useRemove, useUpdate, SUBJECT_COLORS, ASSESSMENT_KINDS, assessmentTag, WEEKDAYS, hhmm,
   type Assessment, type Material, type Subject,
 } from "@/lib/data";
 
@@ -154,6 +155,7 @@ function SubjectSheet({ s, onClose }: { s: Subject; onClose: () => void }) {
   const { data: all = [] } = useTable("assessments");
   const { data: materials = [] } = useTable("materials");
   const { data: topics = [] } = useTable("topics");
+  const { data: slots = [] } = useTable("schedule_slots");
   const updS = useUpdate("subjects");
   const rmS = useRemove("subjects");
   const rmA = useRemove("assessments");
@@ -200,6 +202,20 @@ function SubjectSheet({ s, onClose }: { s: Subject; onClose: () => void }) {
         <div className="space-y-1.5"><Label>Professor(a)</Label><Input maxLength={100} value={prof} onChange={(e) => setProf(e.target.value)} placeholder="Opcional" /></div>
         {dirty && <Button size="sm" className="rounded-full" onClick={saveInfo} disabled={updS.isPending}>Salvar alterações</Button>}
         <div className="space-y-1.5"><Label>Cor</Label><ColorPicker value={s.color} onChange={(color) => updS.mutate({ id: s.id, color })} /></div>
+      </section>
+
+      {/* Aulas desta disciplina na grade semanal */}
+      <section className="mt-10">
+        <p className="eyebrow mb-3">Aulas na semana</p>
+        {slots.filter((x) => x.subject_id === s.id).length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhuma aula na grade. Adicione em "Grade semanal", no topo desta página.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {slots.filter((x) => x.subject_id === s.id).sort((a, b) => a.weekday - b.weekday || a.start_time.localeCompare(b.start_time)).map((x) => (
+              <span key={x.id} className="rounded-full border px-3 py-1 text-sm"><strong>{WEEKDAYS[x.weekday]}</strong> {hhmm(x.start_time)}–{hhmm(x.end_time)}{x.location ? ` · ${x.location}` : ""}</span>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Cronograma completo */}
@@ -271,6 +287,8 @@ function Disciplinas() {
   return (
     <>
       <PageHeader eyebrow="Disciplinas" title={<>Tudo que você <strong className="font-bold">estuda</strong>, organizado.</>} action={<SubjectDialog />} />
+      <WeeklyGrid />
+      <p className="eyebrow mb-4">Suas disciplinas</p>
       {isLoading ? <p className="text-muted-foreground">Carregando…</p> : data.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-12 text-center text-muted-foreground">Nenhuma disciplina ainda. Cadastre a primeira!</div>
       ) : <div className="grid gap-5 md:grid-cols-2">{data.map((s) => <SubjectCard key={s.id} s={s} onOpen={() => setOpenId(s.id)} />)}</div>}

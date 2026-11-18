@@ -128,7 +128,7 @@ export function Dropzone({ compact = false, onDone }: { compact?: boolean; onDon
             <>
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-accent"><UploadCloud className="h-7 w-7 text-primary-deep" /></div>
               <p className={cn("mt-4 font-light", compact ? "text-2xl" : "text-3xl md:text-4xl")}>Jogue <strong className="font-bold">qualquer arquivo</strong> aqui.</p>
-              <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">Cronograma do SIGAA, slides, lista de exercícios, foto do quadro… a IA descobre o que é e organiza para você.</p>
+              <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">Cronograma do SIGAA, grade de horários, slides, lista de exercícios, foto do quadro… a IA descobre o que é e organiza para você.</p>
               <Button className="mt-5 rounded-full shadow-glow" onClick={() => input.current?.click()}>Escolher arquivo</Button>
               <p className="mt-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">PDF ou imagem · até 15 MB</p>
 

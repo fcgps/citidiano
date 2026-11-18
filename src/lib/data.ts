@@ -85,4 +85,10 @@ export function assessmentTag(a: { kind: string; name: string }): { key: "extra"
   return { key: "prova", label: "Prova" };
 }
 
+// Grade semanal (tabela schedule_slots): weekday 1 = segunda ... 7 = domingo
+export const WEEKDAYS = ["", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"] as const;
+export const SLOT_KINDS: Record<string, string> = { aula: "Aula", citi: "CITi", treino: "Treino", outro: "Outro" };
+export const SLOT_KIND_COLORS: Record<string, string> = { citi: "#66CC00", treino: "#FF7A1A", outro: "#64748B" };
+export const hhmm = (t: string | null | undefined) => (t ?? "").slice(0, 5);
+
 export const SUBJECT_COLORS = ["#00C853", "#0EA5A4", "#06B6D4", "#2563EB", "#6366F1", "#A855F7", "#EC4899", "#EF4444", "#F97316", "#F59E0B", "#65A30D", "#111827"];

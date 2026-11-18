@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Dropzone } from "@/components/despejo/Dropzone";
 import { CronogramaReview, MaterialReview, discardDump } from "@/components/despejo/Review";
 import { TextReview } from "@/components/despejo/TextReview";
+import { GradeReview } from "@/components/despejo/GradeReview";
 import { analyzeDump, interpretText } from "@/lib/despejo.functions";
 import { useTable, type Dump } from "@/lib/data";
 
@@ -41,14 +42,14 @@ function Despejo() {
 
   return (
     <>
-      <PageHeader eyebrow="Área de despejo" title={<>Jogue aqui. <strong className="font-bold">A IA organiza.</strong></>} desc="Cronogramas viram avaliações no calendário. Slides e listas vão para os materiais da disciplina certa. E você pode simplesmente escrever: “prova de DS adiada uma semana”." />
+      <PageHeader eyebrow="Área de despejo" title={<>Jogue aqui. <strong className="font-bold">A IA organiza.</strong></>} desc="Cronogramas viram avaliações no calendário. Slides e listas vão para os materiais da disciplina certa. Um print da sua grade de horários vira sua rotina semanal. E você pode simplesmente escrever: “prova de DS adiada uma semana”." />
       <Dropzone />
       {pending.map((d, i) => (
         <section key={d.id} ref={i === 0 ? firstPending : undefined} className="mt-10 scroll-mt-24 rounded-3xl border bg-background p-6 md:p-8">
-          <p className="eyebrow">{d.doc_type === "texto" ? "A IA sugere" : d.doc_type === "cronograma" ? "Revise o cronograma" : "Confirme o material"}</p>
+          <p className="eyebrow">{d.doc_type === "texto" ? "A IA sugere" : d.doc_type === "grade" ? "Revise sua grade semanal" : d.doc_type === "cronograma" ? "Revise o cronograma" : "Confirme o material"}</p>
           <h2 className="mb-6 mt-2 text-2xl font-light">{d.doc_type === "texto" ? `“${d.file_name}”` : d.file_name}</h2>
           {d.doc_type !== "texto" && (d.result as any)?.reason && <p className="-mt-5 mb-6 text-sm text-muted-foreground">{(d.result as any).reason}</p>}
-          {d.doc_type === "texto" ? <TextReview dump={d} /> : d.doc_type === "cronograma" ? <CronogramaReview dump={d} subjects={subjects} topics={topics} /> : <MaterialReview dump={d} subjects={subjects} topics={topics} />}
+          {d.doc_type === "texto" ? <TextReview dump={d} /> : d.doc_type === "grade" ? <GradeReview dump={d} subjects={subjects} /> : d.doc_type === "cronograma" ? <CronogramaReview dump={d} subjects={subjects} topics={topics} /> : <MaterialReview dump={d} subjects={subjects} topics={topics} />}
         </section>
       ))}
       <section className="mt-14">
