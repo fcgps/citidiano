@@ -46,6 +46,53 @@ async function callGemini(key: string, body: unknown, firstMs = 20_000): Promise
   return alt.status === 404 ? first : alt;
 }
 
+// Tipo do arquivo: alguns aparelhos não informam (ou mandam "application/octet-stream")
+const EXT_MIME: Record<string, string> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", heic: "image/heic", heif: "image/heif" };
+function mimeOf(name: string, ...candidates: (string | null | undefined)[]) {
+  const good = candidates.find((m) => m && (m === "application/pdf" || m.startsWith("image/")));
+  return good ?? EXT_MIME[name.split(".").pop()?.toLowerCase() ?? ""] ?? "application/pdf";
+}
+
+// Arquivos maiores vão pela Files API do Gemini (o envio embutido tem limite de ~20 MB
+// por pedido, e o arquivo cresce ~33% ao virar texto base64)
+const INLINE_MAX = 7_000_000;
+async function uploadToGemini(key: string, blob: Blob, mime: string, name: string): Promise<string> {
+  const start = await fetch("https://generativelanguage.googleapis.com/upload/v1beta/files", {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": key,
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(blob.size),
+      "X-Goog-Upload-Header-Content-Type": mime,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ file: { display_name: name.slice(0, 100) } }),
+  });
+  const url = start.headers.get("x-goog-upload-url");
+  if (!start.ok || !url) throw new Error(`upload start ${start.status}`);
+  const up = await fetch(url, {
+    method: "POST",
+    headers: { "X-Goog-Upload-Offset": "0", "X-Goog-Upload-Command": "upload, finalize" },
+    body: blob,
+  });
+  if (!up.ok) throw new Error(`upload ${up.status}`);
+  let info = ((await up.json()) as any)?.file;
+  // PDFs grandes podem levar alguns segundos para ficarem prontos
+  for (let i = 0; i < 10 && info?.state === "PROCESSING"; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const chk = await fetch(`https://generativelanguage.googleapis.com/v1beta/${info.name}`, { headers: { "x-goog-api-key": key } });
+    info = (await chk.json()) as any;
+  }
+  if (!info?.uri || info.state === "FAILED") throw new Error("upload falhou");
+  return info.uri as string;
+}
+
+// Mensagem do Google, resumida, para o erro mostrar o motivo real
+const googleReason = (body: string) => {
+  try { return String((JSON.parse(body) as any)?.error?.message ?? "").slice(0, 160); } catch { return body.slice(0, 160); }
+};
+
 function toBase64(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf);
   let s = "";
@@ -124,11 +171,22 @@ export const analyzeDump = createServerFn({ method: "POST" })
     }).join("\n");
     const today = new Date().toISOString().slice(0, 10);
 
+    const mime = mimeOf(dump.file_name, dump.mime, file.type);
+    let filePart: unknown;
+    try {
+      filePart = file.size > INLINE_MAX
+        ? { file_data: { mime_type: mime, file_uri: await uploadToGemini(key, file, mime, dump.file_name) } }
+        : { inline_data: { mime_type: mime, data: toBase64(await file.arrayBuffer()) } };
+    } catch (e) {
+      console.error("Envio do arquivo ao Gemini", e);
+      return fail("Não consegui enviar o arquivo para a IA. Tente de novo em instantes.");
+    }
+
     let res: Response;
     try {
       res = await callGemini(key, {
         contents: [{ role: "user", parts: [
-          { inline_data: { mime_type: dump.mime || file.type, data: toBase64(await file.arrayBuffer()) } },
+          filePart,
           { text: prompt(today, catalog) },
         ] }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.1, thinkingConfig: { thinkingLevel: "low" } },
@@ -138,10 +196,15 @@ export const analyzeDump = createServerFn({ method: "POST" })
       return fail("Não consegui falar com a IA. Tente de novo em instantes.");
     }
     if (!res.ok) {
-      console.error("Gemini", res.status, await res.text());
+      const errBody = await res.text();
+      console.error("Gemini", res.status, errBody);
       if (res.status === 429 || res.status === 503) return fail("A IA do Google está sobrecarregada agora. Tente de novo em um minuto.");
       if (res.status === 504) return fail("A IA demorou demais para responder. Tente de novo em instantes.");
-      if (res.status === 400) return fail("A IA não conseguiu ler este arquivo. Ele pode estar corrompido ou ser grande demais.");
+      if (res.status === 400) {
+        const why = googleReason(errBody);
+        if (/password|encrypt/i.test(why)) return fail("Este PDF está protegido por senha. Salve uma cópia sem senha (ou tire um print) e envie de novo.");
+        return fail(`A IA não conseguiu ler este arquivo. Tente salvar de novo como PDF ou enviar um print.${why ? ` (Google: ${why})` : ""}`);
+      }
       if (res.status === 403 || res.status === 401) return fail("A chave da IA foi recusada. Verifique a chave do Gemini.");
       return fail(`A IA teve um problema ao analisar o arquivo (erro ${res.status}). Tente de novo.`);
     }
