@@ -1,36 +1,49 @@
 # Prompts guardados para o Lovable
 
-Prompts prontos para colar no chat do Lovable quando houver créditos.
 Pela regra do projeto (AGENTS.md), mudanças no banco de dados são feitas pelo Lovable.
+Todo o resto é feito direto no código.
 
 ---
 
-## 1. Sincronizar o plano da semana entre aparelhos
+## Último prompt: tabelas do plano da semana e da grade semanal
 
-**Por quê:** hoje o plano da semana (e os ajustes feitos nele) fica guardado só no
-navegador (`src/lib/plan-cache.ts`, via localStorage). No celular ou em outro
-navegador, o plano é gerado de novo e os ajustes se perdem.
+**Por quê:**
+- `week_plans`: hoje o plano da semana (e os ajustes nele) fica só no navegador
+  (`src/lib/plan-cache.ts`). Com a tabela, ele acompanha o usuário no celular.
+- `schedule_slots`: grade semanal fixa (aulas e compromissos que se repetem toda
+  semana, com horário). Base para o plano passar a sugerir horários livres.
 
-**Depois que o Lovable criar a tabela:** trocar `readPlan`/`writePlan` em
-`src/lib/plan-cache.ts` para ler e gravar na tabela `week_plans` (o resto do app
-já usa só essas funções).
+**Depois que o Lovable criar:** `git pull`. O código do app é adaptado fora do
+Lovable (`plan-cache.ts` passa a usar `week_plans`; nova tela da grade usa `schedule_slots`).
 
 **Prompt (copiar a partir daqui):**
 
 ```
-Crie APENAS uma tabela nova no banco de dados, sem alterar nenhuma tela nem código do app (eu adapto o código depois).
+Crie APENAS duas tabelas novas no banco de dados. Não altere nenhuma tela, componente ou código do app: eu adapto o código depois.
 
-Tabela public.week_plans — guarda o plano da semana gerado pela IA para cada usuário:
+1) public.week_plans — plano da semana gerado pela IA, um por usuário e semana:
 - id uuid primary key default gen_random_uuid()
 - user_id uuid not null default auth.uid()
-- week_start date not null  (segunda-feira da semana)
-- plan jsonb not null  (o plano: headline, recommendations e days)
-- sig text not null default ''  (assinatura da agenda usada para gerar o plano)
+- week_start date not null   (segunda-feira da semana)
+- plan jsonb not null
+- sig text not null default ''
 - generated_at timestamptz not null default now()
 - updated_at timestamptz not null default now()
-- restrição única em (user_id, week_start)
+- unique (user_id, week_start)
 
-Segurança: habilite RLS e crie uma política para que cada usuário só leia, crie, altere e apague as próprias linhas (auth.uid() = user_id), com os mesmos GRANTs das outras tabelas do app (authenticated e service_role).
+2) public.schedule_slots — grade semanal fixa (aulas e compromissos que se repetem toda semana):
+- id uuid primary key default gen_random_uuid()
+- user_id uuid not null default auth.uid()
+- subject_id uuid null references public.subjects(id) on delete cascade
+- title text not null
+- kind text not null default 'aula'   (ex.: aula, citi, treino, outro)
+- weekday smallint not null check (weekday between 1 and 7)   (1 = segunda ... 7 = domingo)
+- start_time time not null
+- end_time time not null
+- location text null
+- created_at timestamptz not null default now()
 
-Depois, atualize os tipos do Supabase do projeto (src/integrations/supabase/types.ts) para incluir a tabela.
+Nas duas tabelas, siga o mesmo padrão das tabelas que já existem: habilite RLS com uma política para o usuário ler, criar, alterar e apagar só as próprias linhas (auth.uid() = user_id), e dê GRANT SELECT, INSERT, UPDATE, DELETE para authenticated e GRANT ALL para service_role.
+
+No fim, atualize os tipos do Supabase (src/integrations/supabase/types.ts) para incluir as duas tabelas. Não faça mais nenhuma mudança.
 ```
