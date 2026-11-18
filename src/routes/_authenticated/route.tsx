@@ -3,6 +3,7 @@ import { LayoutDashboard, BookOpen, CalendarDays, Sparkles } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/Logo";
 import { AccountMenu } from "@/components/AccountMenu";
+import { WelcomeDialog } from "@/components/WelcomeDialog";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -50,6 +51,7 @@ function Shell() {
         </div>
       </header>
       <main className="relative mx-auto max-w-6xl px-5 pb-28 pt-10 md:pb-16"><Outlet /></main>
+      <WelcomeDialog user={user} />
       <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 rounded-2xl border bg-background/95 p-1 shadow-lg backdrop-blur md:hidden">
         {nav.map((n) => (
           <Link key={n.to} to={n.to} className="flex flex-col items-center gap-0.5 rounded-xl py-2 text-[11px] text-muted-foreground"
