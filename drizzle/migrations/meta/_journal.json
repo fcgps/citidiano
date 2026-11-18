@@ -15,6 +15,13 @@
       "when": 1794874009908,
       "tag": "0001_area_de_despejo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794965741971,
+      "tag": "0002_create_week_plans_and_schedule_slots",
+      "breakpoints": true
     }
   ]
 }

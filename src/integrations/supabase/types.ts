@@ -239,6 +239,53 @@ export type Database = {
           },
         ]
       }
+      schedule_slots: {
+        Row: {
+          created_at: string
+          end_time: string
+          id: string
+          kind: string
+          location: string | null
+          start_time: string
+          subject_id: string | null
+          title: string
+          user_id: string
+          weekday: number
+        }
+        Insert: {
+          created_at?: string
+          end_time: string
+          id?: string
+          kind?: string
+          location?: string | null
+          start_time: string
+          subject_id?: string | null
+          title: string
+          user_id?: string
+          weekday: number
+        }
+        Update: {
+          created_at?: string
+          end_time?: string
+          id?: string
+          kind?: string
+          location?: string | null
+          start_time?: string
+          subject_id?: string | null
+          title?: string
+          user_id?: string
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_slots_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subjects: {
         Row: {
           color: string
@@ -297,6 +344,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      week_plans: {
+        Row: {
+          generated_at: string
+          id: string
+          plan: Json
+          sig: string
+          updated_at: string
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          generated_at?: string
+          id?: string
+          plan: Json
+          sig?: string
+          updated_at?: string
+          user_id?: string
+          week_start: string
+        }
+        Update: {
+          generated_at?: string
+          id?: string
+          plan?: Json
+          sig?: string
+          updated_at?: string
+          user_id?: string
+          week_start?: string
+        }
+        Relationships: []
       }
     }
     Views: {
