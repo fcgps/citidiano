@@ -242,7 +242,7 @@ const eventWhen = (e: { starts_at: string; ends_at?: string | null }) =>
   `${localDateTime(e.starts_at)}${e.ends_at ? `–${new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }).format(new Date(e.ends_at))}` : ""}`;
 
 function textPrompt(text: string, ctx: string, now: string, today: string) {
-  return `Você é o assistente do CITidiano, um planejador para universitários brasileiros que também fazem outras coisas (empresa júnior CITi, estágio, academia).
+  return `Você é o assistente do CITidiano, um planejador para universitários brasileiros. Cada pessoa tem a própria rotina: só considere atividades (empresa júnior, estágio, academia etc.) que aparecem nos dados ou na mensagem dela.
 Agora é ${now} (fuso de Brasília). Hoje é ${today}.
 
 O usuário escreveu na Área de despejo:
@@ -401,7 +401,7 @@ const addDaysIso = (iso: string, n: number) => {
 
 function planPrompt(weekStart: string, today: string, ctx: string, keep: KeepItem[]) {
   const days = Array.from({ length: 7 }, (_, i) => addDaysIso(weekStart, i));
-  return `Você é o assistente do CITidiano, um planejador para universitários que também fazem empresa júnior (CITi), estágio e academia.
+  return `Você é o assistente do CITidiano, um planejador para universitários. Cada pessoa tem a própria rotina: planeje SÓ com o que aparece nos dados abaixo. Não suponha que a pessoa faz empresa júnior, estágio, academia ou qualquer outra atividade que não esteja nos dados.
 Hoje é ${today}. Monte o plano da semana de ${days[0]} (segunda) a ${days[6]} (domingo).
 
 Dados do usuário (próximas 3 semanas a partir de ${days[0]}):
@@ -418,7 +418,7 @@ Regras:
 - "days" tem exatamente 7 dias, nas datas ${days.join(", ")}, nessa ordem.
 - Itens fixed=true são SOMENTE compromissos que existem nos dados desta semana (provas, mini-provas, entregas, listas, demandas do CITi, reuniões, treinos/estudos já marcados). Nunca invente compromissos fixos. Não inclua aulas.
 - Avaliações [extra] (final, 2ª chamada) entram como fixed com note "Só se precisar".
-- Itens fixed=false são suas sugestões: blocos de estudo antes das provas (comece com antecedência, aumente perto da prova, cite os assuntos cobrados quando houver), treinos para cumprir as metas semanais, tempo para demandas do CITi antes dos prazos, e descanso.
+- Itens fixed=false são suas sugestões: blocos de estudo antes das provas (comece com antecedência, aumente perto da prova, cite os assuntos cobrados quando houver), treinos para cumprir as metas semanais, tempo para demandas da empresa júnior/CITi antes dos prazos (SÓ se houver compromissos ou grade desse tipo nos dados), e descanso. Nunca sugira treino sem meta ou treino nos dados, nem empresa júnior/CITi sem ela aparecer nos dados.
 - Treinos e esportes já marcados na agenda (compromissos [treino], ex.: pelada, futebol, corrida) CONTAM para metas de atividade física da mesma semana: se a meta é academia 3x e já há 1 pelada marcada, sugira só mais 2. Diga isso na recomendação.
 - Distribua as metas semanais (ex.: academia 3x) olhando também as semanas seguintes: se a próxima semana for pesada, adiante treinos nesta; em dias de prova, prefira descanso ou treino leve. Explique isso nas recomendações.
 - Não coloque sugestões em dias que já passaram (antes de ${today}); neles, mantenha só os fixos.
@@ -523,6 +523,17 @@ export const planWeek = createServerFn({ method: "POST" })
       ];
       return { date, load: ["leve", "media", "pesada"].includes(d.load) ? d.load : "media", items: merged };
     });
+
+    // Sem nada de empresa júnior/CITi nos dados (compromissos, grade, metas), a IA não pode sugerir isso
+    const EJ_RE = /\bciti\b|empresa j[uú]nior|\bej\b/i;
+    const hasEJ = (events ?? []).some((e) => e.kind === "citi" || EJ_RE.test(e.title))
+      || (slots ?? []).some((g) => g.kind === "citi" || EJ_RE.test(g.title))
+      || (goals ?? []).some((g) => EJ_RE.test(g.title));
+    if (!hasEJ) for (const d of days) d.items = d.items.filter((it) => it.fixed || it.edited || (it.type !== "citi" && !EJ_RE.test(it.title)));
+    // Treino só se houver meta, treino na grade ou treino marcado
+    const hasTraining = (goals ?? []).some((g) => PHYSICAL_RE.test(g.title)) || (slots ?? []).some((g) => g.kind === "treino" || PHYSICAL_RE.test(g.title))
+      || days.some((d) => d.items.some((it) => it.type === "treino" && (it.fixed || it.edited)));
+    if (!hasTraining) for (const d of days) d.items = d.items.filter((it) => it.fixed || it.edited || it.type !== "treino");
 
     // Treinos: fixos + ajustados pelo usuário + sugeridos pela IA não podem passar da meta semanal
     const target = (goals ?? []).filter((g) => g.kind === "weekly" && PHYSICAL_RE.test(g.title)).reduce((n, g) => n + (g.times_per_week ?? 0), 0);
