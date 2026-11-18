@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -52,18 +52,21 @@ function AuthPage() {
 
   return (
     <div className="grid min-h-screen md:grid-cols-2">
-      <div className="relative hidden overflow-hidden bg-gradient-primary p-12 md:flex md:flex-col md:justify-between">
-        <Link to="/"><span className="text-xl font-extrabold text-primary-foreground">CITidiano</span></Link>
-        <div>
-          <p className="mb-4 font-mono text-xs uppercase tracking-[0.16em] text-primary-foreground/80">Faculdade · EJ · Estágio · Academia</p>
-          <h2 className="text-5xl font-light leading-tight text-primary-foreground">Menos caos, <strong className="font-extrabold">mais rotina.</strong></h2>
-        </div>
+      {/* Metade verde: "papel de parede" com a logo repetida, inclinada e bem suave */}
+      <div className="relative hidden overflow-hidden bg-gradient-primary md:block" aria-hidden>
+        <div
+          className="absolute -inset-1/2 -rotate-[18deg] opacity-25"
+          style={{ backgroundImage: "url(/logo-padrao.png)", backgroundSize: "380px 200px", backgroundRepeat: "repeat" }}
+        />
       </div>
       <div className="flex items-center justify-center px-6 py-16">
         <div className="w-full max-w-sm">
-          <Link to="/" className="md:hidden"><Logo /></Link>
-          <p className="eyebrow mb-3 mt-8 md:mt-0">{mode === "login" ? "Bem-vindo de volta" : "Crie sua conta"}</p>
-          <h1 className="text-4xl font-light">{mode === "login" ? <>Entrar no <strong className="font-bold">CITidiano</strong></> : <>Comece seu <strong className="font-bold">planejamento</strong></>}</h1>
+          {mode === "signup" && <p className="eyebrow mb-3">Crie sua conta</p>}
+          {mode === "login" ? (
+            <h1 className="flex flex-wrap items-center gap-x-3 gap-y-2 text-4xl font-light">Entrar no <Logo size="h-12" /></h1>
+          ) : (
+            <h1 className="text-4xl font-light">Comece seu <strong className="font-bold">planejamento</strong></h1>
+          )}
           {sent ? (
             <div className="mt-8 rounded-xl border bg-accent p-5 text-sm text-accent-foreground">
               Enviamos um link de confirmação para <strong>{email}</strong>. Confirme seu e-mail para entrar.
