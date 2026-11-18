@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [showPw, setShowPw] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -74,7 +76,14 @@ function AuthPage() {
           ) : (
             <form onSubmit={submit} className="mt-8 space-y-4">
               <div className="space-y-1.5"><Label htmlFor="email">E-mail</Label><Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
-              <div className="space-y-1.5"><Label htmlFor="pw">Senha</Label><Input id="pw" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label htmlFor="pw">Senha</Label>
+                <div className="relative">
+                  <Input id="pw" type={showPw ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} className="pr-11" autoComplete={mode === "login" ? "current-password" : "new-password"} />
+                  <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground hover:text-foreground" aria-label={showPw ? "Esconder senha" : "Mostrar senha"} title={showPw ? "Esconder senha" : "Mostrar senha"}>
+                    {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
               <Button type="submit" disabled={loading} className="h-11 w-full rounded-full font-semibold shadow-glow">{loading ? "Aguarde…" : mode === "login" ? "Entrar" : "Criar conta"}</Button>
             </form>
           )}

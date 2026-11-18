@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, LogOut, Monitor, Moon, Settings, Sun, UserPlus } from "lucide-react";
+import { Check, LogOut, Monitor, Moon, Settings, Sun, Trash2, UserPlus } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,9 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { deleteAccount } from "@/lib/account.functions";
 
 const initials = (email: string) => {
   const name = email.split("@")[0] ?? "";
@@ -100,7 +104,7 @@ export function AccountMenu({ email, userId }: { email: string; userId: string }
           <DropdownMenuItem onSelect={signOut} className="gap-3 text-destructive focus:text-destructive"><LogOut className="h-4 w-4" />Sair</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} email={email} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} email={email} onDeleted={async () => { forgetAccount(userId); await resetData(); await supabase.auth.signOut({ scope: "local" }); navigate({ to: "/auth", replace: true }); }} />
     </>
   );
 }
@@ -111,9 +115,26 @@ const THEMES: { id: Theme; label: string; icon: typeof Sun }[] = [
   { id: "system", label: "Igual ao sistema", icon: Monitor },
 ];
 
-function SettingsDialog({ open, onOpenChange, email }: { open: boolean; onOpenChange: (o: boolean) => void; email: string }) {
+function SettingsDialog({ open, onOpenChange, email, onDeleted }: { open: boolean; onOpenChange: (o: boolean) => void; email: string; onDeleted: () => Promise<void> }) {
   const [theme, setThemeState] = useState<Theme>("light");
-  useEffect(() => { if (open) setThemeState(getTheme()); }, [open]);
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const remove = useServerFn(deleteAccount);
+  useEffect(() => { if (open) { setThemeState(getTheme()); setConfirming(false); setTyped(""); } }, [open]);
+
+  async function doDelete() {
+    setDeleting(true);
+    try {
+      const r = await remove({ data: { confirm: "APAGAR" } });
+      if (!r.ok) { toast.error(r.error); return; }
+      onOpenChange(false);
+      toast.success("Sua conta e seus dados foram apagados.");
+      await onDeleted();
+    } catch {
+      toast.error("Não consegui apagar a conta agora. Tente de novo.");
+    } finally { setDeleting(false); }
+  }
   const choose = (t: Theme) => { setTheme(t); setThemeState(t); };
 
   return (
@@ -134,6 +155,25 @@ function SettingsDialog({ open, onOpenChange, email }: { open: boolean; onOpenCh
         <section className="mt-2">
           <p className="eyebrow mb-2">Conta</p>
           <p className="text-sm text-muted-foreground">Conectado como <span className="font-medium text-foreground">{email}</span></p>
+        </section>
+        {/* Apagar conta: pede confirmação digitando APAGAR */}
+        <section className="mt-2 rounded-2xl border border-destructive/40 p-4">
+          <p className="eyebrow mb-2 text-destructive">Apagar conta</p>
+          {!confirming ? (
+            <>
+              <p className="text-sm text-muted-foreground">Remove sua conta e tudo que está nela: disciplinas, avaliações, grade, metas, planos e arquivos. Não dá para desfazer.</p>
+              <Button variant="outline" size="sm" className="mt-3 rounded-full border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setConfirming(true)}><Trash2 className="mr-1 h-4 w-4" />Apagar minha conta</Button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm">Para confirmar, digite <strong>APAGAR</strong> abaixo.</p>
+              <Input className="mt-2" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="APAGAR" autoFocus />
+              <div className="mt-3 flex justify-end gap-2">
+                <Button variant="ghost" size="sm" className="rounded-full" onClick={() => { setConfirming(false); setTyped(""); }} disabled={deleting}>Cancelar</Button>
+                <Button variant="destructive" size="sm" className="rounded-full" disabled={typed.trim().toUpperCase() !== "APAGAR" || deleting} onClick={doDelete}>{deleting ? "Apagando…" : "Apagar para sempre"}</Button>
+              </div>
+            </>
+          )}
         </section>
       </DialogContent>
     </Dialog>
