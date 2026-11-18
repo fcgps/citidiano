@@ -287,8 +287,8 @@ export const interpretText = createServerFn({ method: "POST" })
 // treino e descanso, cada uma com o motivo. Ainda sem horários.
 // ---------------------------------------------------------------------------
 
-export type PlanItem = { title: string; type: "prova" | "entrega" | "citi" | "estudo" | "treino" | "descanso" | "outro"; fixed: boolean; subject_id: string | null; note: string | null; edited?: boolean };
-type KeepItem = { date: string; title: string; type: string; subject_id: string | null; note: string | null };
+export type PlanItem = { title: string; type: "prova" | "entrega" | "citi" | "estudo" | "treino" | "descanso" | "outro"; fixed: boolean; subject_id: string | null; note: string | null; edited?: boolean; start?: string | null; end?: string | null };
+type KeepItem = { date: string; title: string; type: string; subject_id: string | null; note: string | null; start?: string | null; end?: string | null };
 // Metas de atividade física (para conferir quantos treinos o plano sugere)
 const PHYSICAL_RE = /academia|treino|muscula|pelada|futebol|corrida|correr|nata[cç][aã]o|esporte|exerc[ií]cio f[ií]sico|caminhada|bike|pedal|luta|crossfit|yoga|pilates/i;
 // Dois títulos falam da mesma coisa? (ex.: "Pelada Futebol" e "Pelada")

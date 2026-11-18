@@ -88,17 +88,17 @@ export function TextReview({ dump }: { dump: Dump }) {
       // Sugestões do plano: mexe só no plano salvo (continuam sendo sugestões, nada vai para o calendário)
       case "move_suggestion": {
         const s = suggestion(a.ref)!;
-        if (!moveSuggestion(planWeekStart!, s, a.date)) throw new Error("Não achei essa sugestão no plano. Refaça o plano e tente de novo.");
+        if (!(await moveSuggestion(planWeekStart!, s, a.date))) throw new Error("Não achei essa sugestão no plano. Refaça o plano e tente de novo.");
         return;
       }
       case "remove_suggestion": {
         const s = suggestion(a.ref)!;
-        if (!removeSuggestion(planWeekStart!, s)) throw new Error("Não achei essa sugestão no plano. Refaça o plano e tente de novo.");
+        if (!(await removeSuggestion(planWeekStart!, s))) throw new Error("Não achei essa sugestão no plano. Refaça o plano e tente de novo.");
         return;
       }
       case "add_suggestion": {
         const type = (SUGGESTION_TYPES as readonly string[]).includes(a.suggestion_type) ? (a.suggestion_type as (typeof SUGGESTION_TYPES)[number]) : "outro";
-        if (!addSuggestion(planWeekStart!, { date: a.date, title: a.title, type, subject_id: a.subject_id || null, note: a.note || null })) throw new Error("Não achei o plano dessa semana. Monte o plano e tente de novo.");
+        if (!(await addSuggestion(planWeekStart!, { date: a.date, title: a.title, type, subject_id: a.subject_id || null, note: a.note || null }))) throw new Error("Não achei o plano dessa semana. Monte o plano e tente de novo.");
         return;
       }
       default:

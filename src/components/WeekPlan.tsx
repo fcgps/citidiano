@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { useTable } from "@/lib/data";
 import { interpretText, planWeek, type PlanItem } from "@/lib/despejo.functions";
 // O plano fica guardado no navegador por semana; se a agenda mudar, oferecemos refazer.
-import { PLAN_EVENT, planSuggestions, editedSuggestions, moveSuggestion, readPlan as readCache, removeSuggestion, writePlan as writeCache, type CachedPlan as Cached } from "@/lib/plan-cache";
+import { PLAN_EVENT, loadPlan, loadPlanSuggestions, editedSuggestions, moveSuggestion, readPlan as readCache, removeSuggestion, writePlan as writeCache, type CachedPlan as Cached } from "@/lib/plan-cache";
 
 const TYPE_LABEL: Record<PlanItem["type"], string> = { prova: "Prova", entrega: "Entrega", citi: "CITi", estudo: "Estudo", treino: "Treino", descanso: "Descanso", outro: "Compromisso" };
 const TYPE_COLOR: Partial<Record<PlanItem["type"], string>> = { citi: "#66CC00", treino: "#FF7A1A", descanso: "#94A3B8" };
@@ -83,10 +83,15 @@ export function WeekPlan() {
   // Ao abrir (ou trocar de semana): usa o plano salvo; se não houver, gera um automaticamente uma vez
   useEffect(() => {
     if (!loaded) return;
-    const c = readCache(week);
-    setCached(c);
+    let alive = true;
+    setCached(readCache(week)); // mostra na hora o que já está neste navegador...
     setError(null);
-    if (!c && !autoTried.current.has(week)) { autoTried.current.add(week); run(); }
+    loadPlan(week).then((c) => { // ...e confere a versão salva na conta
+      if (!alive) return;
+      setCached(c);
+      if (!c && !autoTried.current.has(week)) { autoTried.current.add(week); run(); }
+    }).catch(() => { /* sem conexão: fica com a cópia local */ });
+    return () => { alive = false; };
   }, [loaded, week]);
 
   // Recarrega quando o plano muda (setas do quadro ou um comando no Despejo)
@@ -252,7 +257,7 @@ function PlanTweak({ week }: { week: string }) {
     setBusy(true);
     setDumpId(null);
     try {
-      const plan = { week, items: planSuggestions(week) };
+      const plan = { week, items: await loadPlanSuggestions(week) };
       const { data: row, error } = await supabase.from("dumps").insert({ path: "", file_name: t.slice(0, 200), doc_type: "texto", result: { text: t.slice(0, 1000), plan, source: "plano" } }).select("id").single();
       if (error || !row) throw new Error("Não consegui registrar seu pedido.");
       if (runId.current !== my) { await discardDump({ id: row.id, path: "" }, qc, "Cancelado"); return; }

@@ -11,10 +11,11 @@ export type Goal = T["goals"]["Row"];
 export type Material = T["materials"]["Row"];
 export type Topic = T["topics"]["Row"];
 export type Dump = T["dumps"]["Row"];
-type TableName = "subjects" | "assessments" | "events" | "goals" | "materials" | "topics" | "dumps";
+export type Slot = T["schedule_slots"]["Row"];
+type TableName = "subjects" | "assessments" | "events" | "goals" | "materials" | "topics" | "dumps" | "schedule_slots";
 
 const orderBy: Record<TableName, string> = {
-  subjects: "name", assessments: "date", events: "starts_at", goals: "created_at", materials: "created_at", topics: "name", dumps: "created_at",
+  subjects: "name", assessments: "date", events: "starts_at", goals: "created_at", materials: "created_at", topics: "name", dumps: "created_at", schedule_slots: "start_time",
 };
 
 export function useTable<K extends TableName>(table: K) {

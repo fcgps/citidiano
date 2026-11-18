@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { analyzeDump, interpretText } from "@/lib/despejo.functions";
 import { discardDump } from "@/components/despejo/Review";
-import { currentWeek, planSuggestions } from "@/lib/plan-cache";
+import { currentWeek, loadPlanSuggestions } from "@/lib/plan-cache";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +57,7 @@ export function Dropzone({ compact = false, onDone }: { compact?: boolean; onDon
     try {
       // Vai junto o plano da semana, para a IA poder mover sugestões em vez de criar eventos
       const week = currentWeek();
-      const plan = { week, items: planSuggestions(week) };
+      const plan = { week, items: await loadPlanSuggestions(week) };
       const { data: row, error } = await supabase.from("dumps").insert({ path: "", file_name: t.slice(0, 200), doc_type: "texto", result: { text: t.slice(0, 1000), plan } }).select("id").single();
       if (error || !row) throw new Error("Não consegui registrar sua mensagem.");
       if (runId.current !== my) { await discardDump({ id: row.id, path: "" }, qc, "Cancelado"); return; }
