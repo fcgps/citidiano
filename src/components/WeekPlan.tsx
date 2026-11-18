@@ -10,7 +10,7 @@ import { TextReview } from "@/components/despejo/TextReview";
 import { discardDump } from "@/components/despejo/Review";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useTable } from "@/lib/data";
+import { useTable, hhmm } from "@/lib/data";
 import { interpretText, planWeek, type PlanItem } from "@/lib/despejo.functions";
 // O plano fica guardado no navegador por semana; se a agenda mudar, oferecemos refazer.
 import { PLAN_EVENT, loadPlan, loadPlanSuggestions, editedSuggestions, moveSuggestion, readPlan as readCache, removeSuggestion, writePlan as writeCache, type CachedPlan as Cached } from "@/lib/plan-cache";
@@ -38,7 +38,9 @@ export function WeekPlan() {
   const { data: assessments = [], isSuccess: aOk } = useTable("assessments");
   const { data: events = [], isSuccess: eOk } = useTable("events");
   const { data: goals = [], isSuccess: gOk } = useTable("goals");
-  const loaded = aOk && eOk && gOk;
+  const { data: slots = [], isSuccess: sOk } = useTable("schedule_slots");
+  const loaded = aOk && eOk && gOk && sOk;
+  const [showClasses, setShowClasses] = useState(true);
 
   const today = startOfDay(new Date());
   const [offset, setOffset] = useState(0); // 0 = esta semana, 1 = próxima
@@ -53,8 +55,9 @@ export function WeekPlan() {
       ...assessments.filter((a) => inRange(parseISO(a.date))).map((a) => `${a.id}${a.date}${a.name}`),
       ...events.filter((e) => inRange(parseISO(e.starts_at))).map((e) => `${e.id}${e.starts_at}${e.title}`),
       ...goals.map((g) => `${g.id}${g.times_per_week}${g.target_hours}`),
+      ...slots.map((g) => `${g.id}${g.weekday}${g.start_time}${g.end_time}`),
     ].sort().join("|");
-  }, [assessments, events, goals, week]);
+  }, [assessments, events, goals, slots, week]);
 
   const [cached, setCached] = useState<Cached | null>(null);
   const [busy, setBusy] = useState(false);
@@ -175,6 +178,8 @@ export function WeekPlan() {
                 const isToday = isSameDay(date, today);
                 const past = isBefore(date, today);
                 const load = LOAD[dayLoad(d.items)]!;
+                const wd = ((date.getDay() + 6) % 7) + 1;
+                const classes = slots.filter((g) => g.weekday === wd).sort((a, b) => a.start_time.localeCompare(b.start_time));
                 return (
                   <div key={d.date} className={cn("flex min-h-56 flex-col border-r last:border-r-0", isToday && "bg-accent/40", past && "opacity-50")}>
                     <div className={cn("border-b p-3", isToday && "border-primary")}>
@@ -185,13 +190,23 @@ export function WeekPlan() {
                       <div className={cn("text-xl font-bold", isToday && "text-primary-deep")}>{format(date, "d/MM")}</div>
                     </div>
                     <div className="flex flex-1 flex-col gap-2 p-2">
+                      {/* Aulas e horários fixos da grade, discretos, só para dar contexto */}
+                      {showClasses && classes.length > 0 && (
+                        <div className="space-y-0.5 rounded-lg bg-muted/60 p-1.5">
+                          {classes.map((g) => (
+                            <div key={g.id} className="flex gap-1.5 truncate text-[10px] text-muted-foreground" title={g.title}>
+                              <span className="font-mono">{hhmm(g.start_time)}</span><span className="truncate">{g.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {d.items.length === 0 && <p className="p-2 text-xs italic text-muted-foreground">{past ? "—" : "Livre"}</p>}
                       {d.items.map((it, i) => {
                         const color = colorOf(it);
                         const s = subj(it.subject_id);
                         return it.fixed ? (
                           <div key={i} className="rounded-xl p-2.5 text-xs text-white shadow-sm" style={{ background: color }} title={it.note ?? undefined}>
-                            <div className="font-mono text-[9px] uppercase tracking-widest opacity-80">{TYPE_LABEL[it.type]}</div>
+                            <div className="flex justify-between font-mono text-[9px] uppercase tracking-widest opacity-80"><span>{TYPE_LABEL[it.type]}</span>{it.start && <span>{it.start}{it.end ? `–${it.end}` : ""}</span>}</div>
                             <div className="font-semibold leading-snug">{it.title}</div>
                             {it.note && <div className="mt-1 opacity-90">{it.note}</div>}
                           </div>
@@ -210,6 +225,7 @@ export function WeekPlan() {
                                 <button onClick={() => removeSuggestion(week, { date: d.date, title: it.title })} className="rounded-full p-0.5 hover:bg-muted" aria-label="Remover sugestão"><X className="h-3 w-3" /></button>
                               </div>
                             )}
+                            {it.start && <div className="font-mono text-[10px] font-semibold" style={{ color }}>{it.start}{it.end ? `–${it.end}` : ""}</div>}
                             <div className="font-semibold leading-snug">{it.title}</div>
                             {s && it.type === "estudo" && <div className="text-[10px] text-muted-foreground">{s.name}</div>}
                             {it.note && <div className="mt-1 text-muted-foreground">{it.note}</div>}
@@ -225,7 +241,11 @@ export function WeekPlan() {
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-2"><span className="h-3 w-5 rounded bg-primary-deep" /> Compromisso fixo</span>
             <span className="flex items-center gap-2"><span className="h-3 w-5 rounded border border-dashed border-primary" /> Sugestão da IA (passe o mouse para mover ou remover)</span>
-            <span>Horários ainda não definidos — por enquanto, o plano mostra o que fazer em cada dia.</span>
+            {slots.length > 0 ? (
+              <button onClick={() => setShowClasses((v) => !v)} className="underline-offset-2 hover:underline">{showClasses ? "Esconder" : "Mostrar"} aulas da grade</button>
+            ) : (
+              <span>Cadastre sua grade semanal em Disciplinas para o plano sugerir horários.</span>
+            )}
             {cached && <span className="ml-auto">Gerado {format(parseISO(cached.at), "dd/MM 'às' HH:mm")}</span>}
           </div>
           <PlanTweak week={week} />

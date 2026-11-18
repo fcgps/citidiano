@@ -17,9 +17,9 @@ type Action =
   | { type: "create_assessment"; label: string; subject_id: string; name: string; date: string; kind: string; topics: string | null }
   | { type: "move_assessment"; label: string; assessment_id: string; date: string }
   | { type: "create_goal"; label: string; title: string; kind: string; times_per_week: number | null; target_hours: number | null; subject_id: string | null; deadline: string | null }
-  | { type: "move_suggestion"; label: string; ref: string; date: string }
+  | { type: "move_suggestion"; label: string; ref: string; date: string; start?: string | null; end?: string | null }
   | { type: "remove_suggestion"; label: string; ref: string }
-  | { type: "add_suggestion"; label: string; date: string; title: string; suggestion_type: string; subject_id: string | null; note: string | null };
+  | { type: "add_suggestion"; label: string; date: string; title: string; suggestion_type: string; subject_id: string | null; note: string | null; start?: string | null; end?: string | null };
 
 const SUGGESTION_TYPES = ["estudo", "treino", "descanso", "citi", "outro"] as const;
 
@@ -88,7 +88,8 @@ export function TextReview({ dump }: { dump: Dump }) {
       // Sugestões do plano: mexe só no plano salvo (continuam sendo sugestões, nada vai para o calendário)
       case "move_suggestion": {
         const s = suggestion(a.ref)!;
-        if (!(await moveSuggestion(planWeekStart!, s, a.date))) throw new Error("Não achei essa sugestão no plano. Refaça o plano e tente de novo.");
+        const t = TIME.test(a.start ?? "") && TIME.test(a.end ?? "") && a.end! > a.start! ? { start: a.start!, end: a.end! } : undefined;
+        if (!(await moveSuggestion(planWeekStart!, s, a.date, t))) throw new Error("Não achei essa sugestão no plano. Refaça o plano e tente de novo.");
         return;
       }
       case "remove_suggestion": {
@@ -98,7 +99,7 @@ export function TextReview({ dump }: { dump: Dump }) {
       }
       case "add_suggestion": {
         const type = (SUGGESTION_TYPES as readonly string[]).includes(a.suggestion_type) ? (a.suggestion_type as (typeof SUGGESTION_TYPES)[number]) : "outro";
-        if (!(await addSuggestion(planWeekStart!, { date: a.date, title: a.title, type, subject_id: a.subject_id || null, note: a.note || null }))) throw new Error("Não achei o plano dessa semana. Monte o plano e tente de novo.");
+        if (!(await addSuggestion(planWeekStart!, { date: a.date, title: a.title, type, subject_id: a.subject_id || null, note: a.note || null, ...(TIME.test(a.start ?? "") && TIME.test(a.end ?? "") && a.end! > a.start! ? { start: a.start!, end: a.end! } : {}) }))) throw new Error("Não achei o plano dessa semana. Monte o plano e tente de novo.");
         return;
       }
       default:

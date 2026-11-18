@@ -198,9 +198,9 @@ Ações possíveis (cada uma com "label": frase curta descrevendo a ação, ex.:
 - {"type":"create_assessment","label":string,"subject_id":string,"name":string,"date":"YYYY-MM-DD","kind":"prova"|"mini-prova"|"entrega"|"seminario"|"extra","topics":string|null}
 - {"type":"move_assessment","label":string,"assessment_id":string,"date":"YYYY-MM-DD"}
 - {"type":"create_goal","label":string,"title":string,"kind":"weekly"|"hours","times_per_week":number|null,"target_hours":number|null,"subject_id":string|null,"deadline":"YYYY-MM-DD"|null}
-- {"type":"move_suggestion","label":string,"ref":string,"date":"YYYY-MM-DD"}   (mover uma sugestão do plano da semana para outro dia da mesma semana)
+- {"type":"move_suggestion","label":string,"ref":string,"date":"YYYY-MM-DD","start":"HH:MM"|null,"end":"HH:MM"|null}   (mover uma sugestão do plano da semana para outro dia da mesma semana)
 - {"type":"remove_suggestion","label":string,"ref":string}
-- {"type":"add_suggestion","label":string,"date":"YYYY-MM-DD","title":string,"suggestion_type":"estudo"|"treino"|"descanso"|"citi"|"outro","subject_id":string|null,"note":string|null}   (nova sugestão no plano da semana, sem ir para o calendário)
+- {"type":"add_suggestion","label":string,"date":"YYYY-MM-DD","title":string,"suggestion_type":"estudo"|"treino"|"descanso"|"citi"|"outro","subject_id":string|null,"note":string|null,"start":"HH:MM"|null,"end":"HH:MM"|null}   (nova sugestão no plano da semana, sem ir para o calendário; horário livre, fora das aulas da grade)
 
 Regras:
 - Se o usuário falar de algo que está nas "Sugestões do plano da semana" (ex.: "muda a academia de quarta para quinta", "tira o estudo de sábado"), use move_suggestion/remove_suggestion com o ref da lista. NÃO crie evento no calendário para isso: continua sendo sugestão. Só crie eventos quando for um compromisso novo com dia definido.
@@ -241,11 +241,12 @@ export const interpretText = createServerFn({ method: "POST" })
     const today = isoDay(now);
     const from = isoDay(new Date(now.getTime() - 14 * 864e5));
     const to = isoDay(new Date(now.getTime() + 150 * 864e5));
-    const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }] = await Promise.all([
+    const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }, { data: slots }] = await Promise.all([
       sb.from("subjects").select("id,name"),
       sb.from("assessments").select("id,name,date,kind,subject_id").gte("date", from).lte("date", to).order("date"),
       sb.from("events").select("id,title,kind,starts_at,subject_id").gte("starts_at", new Date(now.getTime() - 864e5).toISOString()).lte("starts_at", new Date(now.getTime() + 60 * 864e5).toISOString()).order("starts_at"),
       sb.from("goals").select("id,title,kind,times_per_week,target_hours,deadline,subject_id"),
+      sb.from("schedule_slots").select("title,kind,weekday,start_time,end_time,subject_id"),
     ]);
     const sName = (id: string | null) => (subjects ?? []).find((s) => s.id === id)?.name ?? "";
     const ctx = [
@@ -253,6 +254,7 @@ export const interpretText = createServerFn({ method: "POST" })
       "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.id}: ${a.date} [${isExtra(a) ? "extra" : a.kind}] ${a.name} — ${sName(a.subject_id)}`)), (assessments ?? []).length ? "" : "(nenhuma)",
       "Compromissos (próximos 60 dias):", ...((events ?? []).map((e) => `- ${e.id}: ${localDateTime(e.starts_at)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)}` : ""}`)), (events ?? []).length ? "" : "(nenhum)",
       "Metas flexíveis:", ...((goals ?? []).map((g) => `- ${g.id}: ${g.title} (${g.kind === "weekly" ? `${g.times_per_week}x/semana` : `${g.target_hours}h`})`)), (goals ?? []).length ? "" : "(nenhuma)",
+      "Grade semanal (aulas e compromissos que repetem toda semana):", ...gradeLines(slots ?? [], sName), (slots ?? []).length ? "" : "(sem grade)",
       "Sugestões do plano da semana (NÃO estão no calendário; são só sugestões da IA):", ...planItems.map((p) => `- ${p.ref}: ${p.date} [${p.type}] ${p.title}`), planItems.length ? "" : "(nenhuma)",
     ].join("\n");
     const nowLabel = new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(now);
@@ -314,6 +316,14 @@ export type PlanDay = { date: string; load: "leve" | "media" | "pesada"; items: 
 export type WeekPlan = { headline: string; recommendations: { title: string; reason: string }[]; days: PlanDay[] };
 
 const PLAN_TYPES = ["prova", "entrega", "citi", "estudo", "treino", "descanso", "outro"];
+const WEEKDAY_NAMES = ["", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+const weekdayOf = (iso: string) => ((new Date(`${iso}T12:00:00Z`).getUTCDay() + 6) % 7) + 1; // 1 = segunda
+type SlotLite = { title: string; kind: string; weekday: number; start_time: string; end_time: string; subject_id: string | null };
+const gradeLines = (slots: SlotLite[], sName: (id: string | null) => string) =>
+  [...slots].sort((a, b) => a.weekday - b.weekday || a.start_time.localeCompare(b.start_time))
+    .map((g) => `- ${WEEKDAY_NAMES[g.weekday]} ${g.start_time.slice(0, 5)}–${g.end_time.slice(0, 5)} [${g.kind}] ${g.title}${g.subject_id ? ` — ${sName(g.subject_id)} (subject_id ${g.subject_id})` : ""}`);
 const addDaysIso = (iso: string, n: number) => {
   const d = new Date(`${iso}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
@@ -332,7 +342,7 @@ Responda SOMENTE com JSON válido, sem markdown:
 {
   "headline": "uma frase curta resumindo a semana (ex.: 'Semana pesada: 2 provas — foco em Álgebra até quarta')",
   "recommendations": [{"title": "ação curta", "reason": "por quê, em uma frase, citando datas/provas"}],
-  "days": [{"date": "YYYY-MM-DD", "load": "leve"|"media"|"pesada", "items": [{"title": string, "type": "prova"|"entrega"|"citi"|"estudo"|"treino"|"descanso"|"outro", "fixed": boolean, "subject_id": string|null, "note": string|null}]}]
+  "days": [{"date": "YYYY-MM-DD", "load": "leve"|"media"|"pesada", "items": [{"title": string, "type": "prova"|"entrega"|"citi"|"estudo"|"treino"|"descanso"|"outro", "fixed": boolean, "subject_id": string|null, "note": string|null, "start": "HH:MM"|null, "end": "HH:MM"|null}]}]
 }
 
 Regras:
@@ -346,17 +356,23 @@ Regras:
 - No máximo 4 itens por dia. Deixe pelo menos um dia leve. "note" curta (até 80 caracteres) explicando o motivo da sugestão; null nos fixos sem observação.
 - "subject_id" só com ids da lista de disciplinas; null quando não se aplica.
 - "recommendations": de 2 a 4 itens, os mais importantes da semana.
+- HORÁRIOS: não coloque as aulas da grade no quadro (elas já aparecem à parte), mas use a grade e os compromissos para saber o que está ocupado.
+  - Provas/avaliações sem horário: se houver aula dessa disciplina na grade nesse dia da semana, a prova é no horário da aula (use start/end da aula e note "No horário da aula"). Senão, start/end null.
+  - Compromissos do calendário: use o horário deles (start; end = start + 1h se não souber).
+  - Sugestões: dê start/end em horários LIVRES entre 07:00 e 23:00, sem encostar em aulas, compromissos ou outras sugestões. Estudo de 1h a 2h, treino de 1h; se a grade tiver um treino fixo, prefira esse mesmo horário em outros dias. Descanso: start/end null.
+- Treinos da grade (ex.: academia todo domingo) também contam para as metas de atividade física.
 - CONSISTÊNCIA: o quadro e as recomendações precisam dizer a mesma coisa. Se a recomendação diz "academia 2x", o quadro tem exatamente 2 sugestões de academia. Confira antes de responder.${keep.length ? `
 
 Sugestões que o usuário já ajustou à mão (elas serão mantidas exatamente nesses dias; NÃO as repita no JSON e planeje o resto em volta delas, contando-as nas metas):
-${keep.map((k) => `- ${k.date} [${k.type}] ${k.title}`).join("\n")}` : ""}`;
+${keep.map((k) => `- ${k.date}${k.start ? ` ${k.start}–${k.end ?? ""}` : ""} [${k.type}] ${k.title}`).join("\n")}` : ""}`;
 }
 
 export const planWeek = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { weekStart: string; keep?: KeepItem[] }) => {
     if (typeof d?.weekStart !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.weekStart)) throw new Error("semana inválida");
-    const keep = (Array.isArray(d.keep) ? d.keep : []).slice(0, 30).filter((k) => k && typeof k.title === "string" && typeof k.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(k.date));
+    const keep = (Array.isArray(d.keep) ? d.keep : []).slice(0, 30).filter((k) => k && typeof k.title === "string" && typeof k.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(k.date))
+      .map((k) => ({ ...k, start: typeof k.start === "string" && HHMM.test(k.start) ? k.start : null, end: typeof k.end === "string" && HHMM.test(k.end) ? k.end : null }));
     return { weekStart: d.weekStart, keep };
   })
   .handler(async ({ data, context }) => {
@@ -366,14 +382,16 @@ export const planWeek = createServerFn({ method: "POST" })
 
     const from = data.weekStart;
     const to = addDaysIso(from, 20);
-    const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }] = await Promise.all([
+    const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }, { data: slots }] = await Promise.all([
       sb.from("subjects").select("id,name"),
       sb.from("assessments").select("id,name,date,kind,subject_id,topics").gte("date", from).lte("date", to).order("date"),
       sb.from("events").select("id,title,kind,starts_at,subject_id").gte("starts_at", `${from}T00:00:00-03:00`).lte("starts_at", `${to}T23:59:59-03:00`).order("starts_at"),
       sb.from("goals").select("id,title,kind,times_per_week,target_hours,deadline,subject_id,done"),
+      sb.from("schedule_slots").select("title,kind,weekday,start_time,end_time,subject_id"),
     ]);
     const sName = (id: string | null) => (subjects ?? []).find((s) => s.id === id)?.name ?? "";
     const ctx = [
+      "Grade semanal (repete toda semana; são horários OCUPADOS):", ...gradeLines(slots ?? [], sName), (slots ?? []).length ? "" : "(sem grade cadastrada)",
       "Disciplinas:", ...((subjects ?? []).map((s) => `- ${s.id}: ${s.name}`)),
       "", "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.date} [${isExtra(a) ? "extra" : a.kind}] ${a.name} — ${sName(a.subject_id)} (subject_id ${a.subject_id})${a.topics ? ` — assuntos: ${a.topics}` : ""}`)),
       "", "Compromissos:", ...((events ?? []).filter((e) => e.kind !== "feriado").map((e) => `- ${localDateTime(e.starts_at)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)} (subject_id ${e.subject_id})` : ""}`)),
@@ -420,9 +438,11 @@ export const planWeek = createServerFn({ method: "POST" })
         fixed: !!it.fixed,
         subject_id: validSubject(it.subject_id),
         note: typeof it.note === "string" && it.note.trim() ? it.note.slice(0, 120) : null,
+        start: typeof it.start === "string" && HHMM.test(it.start) ? it.start : null,
+        end: typeof it.end === "string" && HHMM.test(it.end) ? it.end : null,
       }));
       // Sugestões ajustadas pelo usuário voltam exatamente para o dia escolhido (e tiram duplicatas da IA nesse dia)
-      const kept: PlanItem[] = data.keep.filter((k) => k.date === date).map((k) => ({ title: k.title.slice(0, 80), type: (PLAN_TYPES.includes(k.type) ? k.type : "outro") as PlanItem["type"], fixed: false, subject_id: validSubject(k.subject_id), note: k.note ? String(k.note).slice(0, 120) : null, edited: true }));
+      const kept: PlanItem[] = data.keep.filter((k) => k.date === date).map((k) => ({ title: k.title.slice(0, 80), type: (PLAN_TYPES.includes(k.type) ? k.type : "outro") as PlanItem["type"], fixed: false, subject_id: validSubject(k.subject_id), note: k.note ? String(k.note).slice(0, 120) : null, edited: true, start: k.start ?? null, end: k.end ?? null }));
       // "Fixo" só se existir de verdade na agenda desse dia; senão vira sugestão
       const real = realOn(date);
       const checked = items.map((it) => (it.fixed && !real.some((r) => sameThing(r, it.title)) ? { ...it, fixed: false } : it));
@@ -439,7 +459,8 @@ export const planWeek = createServerFn({ method: "POST" })
     const target = (goals ?? []).filter((g) => g.kind === "weekly" && PHYSICAL_RE.test(g.title)).reduce((n, g) => n + (g.times_per_week ?? 0), 0);
     if (target > 0) {
       const all = days.flatMap((d) => d.items);
-      let allowed = Math.max(0, target - all.filter((it) => it.type === "treino" && (it.fixed || it.edited)).length);
+      const gradeTreinos = (slots ?? []).filter((g) => g.kind === "treino" || PHYSICAL_RE.test(g.title)).length;
+      let allowed = Math.max(0, target - gradeTreinos - all.filter((it) => it.type === "treino" && (it.fixed || it.edited)).length);
       for (const d of days) {
         d.items = d.items.filter((it) => {
           if (it.type !== "treino" || it.fixed || it.edited) return true;
@@ -448,6 +469,23 @@ export const planWeek = createServerFn({ method: "POST" })
         });
       }
     }
+    // Horários das sugestões: inválidos ou em cima de aula/compromisso/outra sugestão ficam sem horário
+    for (const d of days) {
+      const wd = weekdayOf(d.date);
+      const busy: [number, number][] = [
+        ...(slots ?? []).filter((g) => g.weekday === wd).map((g) => [toMin(g.start_time), toMin(g.end_time)] as [number, number]),
+        ...d.items.filter((it) => it.fixed && it.start).map((it) => { const a = toMin(it.start!); return [a, it.end && toMin(it.end) > a ? toMin(it.end) : a + 60] as [number, number]; }),
+      ];
+      for (const it of d.items) {
+        if (it.fixed) continue;
+        if (!it.start || !it.end || toMin(it.end) <= toMin(it.start)) { it.start = null; it.end = null; continue; }
+        const a = toMin(it.start), b = toMin(it.end);
+        if (busy.some(([x, y]) => a < y && b > x)) { it.start = null; it.end = null; continue; }
+        busy.push([a, b]);
+      }
+      d.items.sort((x, y) => (x.start ? toMin(x.start) : 9999) - (y.start ? toMin(y.start) : 9999));
+    }
+
     const plan: WeekPlan = {
       headline: String(parsed?.headline ?? "").slice(0, 160),
       recommendations: (Array.isArray(parsed?.recommendations) ? parsed.recommendations : []).slice(0, 4).filter((r: any) => r?.title).map((r: any) => ({ title: String(r.title).slice(0, 100), reason: String(r.reason ?? "").slice(0, 220) })),
