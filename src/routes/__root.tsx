@@ -12,7 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { applyTheme, getTheme, themeBootScript } from "@/lib/theme";
-import { rememberSession } from "@/lib/accounts";
+import { clearLegacyPlanCache, rememberSession } from "@/lib/accounts";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -143,6 +143,7 @@ function RootComponent() {
 
   // Tema: aplica a escolha salva e acompanha o sistema quando a opção é "Igual ao sistema"
   useEffect(() => {
+    clearLegacyPlanCache(); // planos antigos guardados sem dono podiam passar de uma conta para outra
     applyTheme();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => getTheme() === "system" && applyTheme("system");

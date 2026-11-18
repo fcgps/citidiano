@@ -29,3 +29,10 @@ export function clearPerAccountCache() {
     Object.keys(localStorage).filter((k) => k.startsWith("citidiano.plano.") || k === "citidiano.calendario.filtros").forEach((k) => localStorage.removeItem(k));
   } catch { /* ignora */ }
 }
+
+// Cópias antigas do plano, de antes de serem separadas por conta (citidiano.plano.AAAA-MM-DD)
+export function clearLegacyPlanCache() {
+  try {
+    Object.keys(localStorage).filter((k) => /^citidiano\.plano\.\d{4}-\d{2}-\d{2}$/.test(k)).forEach((k) => localStorage.removeItem(k));
+  } catch { /* ignora */ }
+}

@@ -10,17 +10,32 @@ export type CachedPlan = { plan: WeekPlan; sig: string; at: string };
 export type SuggestionRef = { ref: string; date: string; title: string; type: PlanItem["type"] };
 
 export const PLAN_EVENT = "citidiano:plano"; // avisa o quadro que o plano mudou
-const KEY = (week: string) => `citidiano.plano.${week}`;
+
+// A cópia no navegador é separada POR CONTA: sem isso, entrar com outra conta no mesmo
+// navegador reaproveitava (e até enviava para a conta nova) o plano da conta anterior.
+let currentUser: string | null = null;
+try {
+  supabase.auth.getSession().then(({ data }) => { currentUser = data.session?.user.id ?? null; });
+  supabase.auth.onAuthStateChange((_e, session) => { currentUser = session?.user.id ?? null; });
+} catch { /* fora do navegador */ }
+async function ensureUser() {
+  if (!currentUser) { const { data } = await supabase.auth.getSession(); currentUser = data.session?.user.id ?? null; }
+  return currentUser;
+}
+const KEY = (week: string) => (currentUser ? `citidiano.plano.${currentUser}.${week}` : null);
 
 export const currentWeek = () => format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
 export const weekDates = (week: string) => Array.from({ length: 7 }, (_, i) => format(addDays(parseISO(week), i), "yyyy-MM-dd"));
 
 // ---- espelho local -------------------------------------------------------
 export function readPlan(week: string): CachedPlan | null {
-  try { const raw = localStorage.getItem(KEY(week)); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  const key = KEY(week);
+  if (!key) return null;
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
 function writeLocal(week: string, c: CachedPlan) {
-  try { localStorage.setItem(KEY(week), JSON.stringify(c)); } catch { /* sem localStorage */ }
+  const key = KEY(week);
+  if (key) { try { localStorage.setItem(key, JSON.stringify(c)); } catch { /* sem localStorage */ } }
   try { window.dispatchEvent(new CustomEvent(PLAN_EVENT, { detail: week })); } catch { /* ignora */ }
 }
 
@@ -35,6 +50,7 @@ async function saveRemote(week: string, c: CachedPlan) {
 
 // Busca o plano da conta; se só existir no navegador (plano antigo), envia para a conta
 export async function loadPlan(week: string): Promise<CachedPlan | null> {
+  await ensureUser();
   const { data, error } = await supabase.from("week_plans").select("plan,sig,generated_at").eq("week_start", week).maybeSingle();
   if (!error && data) {
     const c: CachedPlan = { plan: data.plan as unknown as WeekPlan, sig: data.sig, at: data.generated_at };
@@ -53,6 +69,7 @@ export function writePlan(week: string, c: CachedPlan) {
 
 // Sugestões (não fixas) do plano, com uma referência estável para a IA citar
 export async function loadPlanSuggestions(week: string): Promise<SuggestionRef[]> {
+  await ensureUser();
   const c = readPlan(week) ?? (await loadPlan(week).catch(() => null));
   if (!c) return [];
   return c.plan.days.flatMap((d) => d.items.filter((it) => !it.fixed).map((it, i) => ({ ref: `${d.date}#${i}`, date: d.date, title: it.title, type: it.type })));
@@ -61,6 +78,7 @@ export async function loadPlanSuggestions(week: string): Promise<SuggestionRef[]
 // Altera o plano. Itens mexidos pelo usuário ficam marcados como "edited":
 // continuam sendo sugestões e são mantidos quando o plano é refeito.
 async function update(week: string, fn: (plan: WeekPlan) => boolean): Promise<boolean> {
+  await ensureUser();
   const c = readPlan(week) ?? (await loadPlan(week).catch(() => null));
   if (!c) return false;
   const plan: WeekPlan = JSON.parse(JSON.stringify(c.plan));
