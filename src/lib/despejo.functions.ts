@@ -237,6 +237,9 @@ const localDateTime = (iso: string) => {
   const wd = new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, weekday: "short" }).format(d);
   return `${isoDay(d)} (${wd}) ${time}`;
 };
+// Início–fim de um compromisso (fim só se existir)
+const eventWhen = (e: { starts_at: string; ends_at?: string | null }) =>
+  `${localDateTime(e.starts_at)}${e.ends_at ? `–${new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }).format(new Date(e.ends_at))}` : ""}`;
 
 function textPrompt(text: string, ctx: string, now: string, today: string) {
   return `Você é o assistente do CITidiano, um planejador para universitários brasileiros que também fazem outras coisas (empresa júnior CITi, estágio, academia).
@@ -255,8 +258,9 @@ Decida o que fazer e responda SOMENTE com JSON válido, sem markdown, no formato
 }
 
 Ações possíveis (cada uma com "label": frase curta descrevendo a ação, ex.: "Mover Prova 2 de DS para 26/11"):
-- {"type":"create_event","label":string,"title":string,"kind":"prova"|"entrega"|"citi"|"reuniao"|"estudo"|"treino"|"outro","date":"YYYY-MM-DD","time":"HH:MM","subject_id":string|null}
-- {"type":"move_event","label":string,"event_id":string,"date":"YYYY-MM-DD","time":"HH:MM"}
+- {"type":"create_event","label":string,"title":string,"kind":"prova"|"entrega"|"citi"|"reuniao"|"estudo"|"treino"|"outro","date":"YYYY-MM-DD","time":"HH:MM","end_time":"HH:MM"|null,"subject_id":string|null}
+- {"type":"move_event","label":string,"event_id":string,"date":"YYYY-MM-DD","time":"HH:MM","end_time":"HH:MM"|null}
+- {"type":"create_slot","label":string,"title":string,"kind":"aula"|"citi"|"treino"|"outro","weekday":1-7 (1=segunda ... 7=domingo),"start":"HH:MM","end":"HH:MM","subject_id":string|null,"new_subject_name":string|null}   (horário fixo que se repete TODA semana: vai para a grade semanal)
 - {"type":"delete_event","label":string,"event_id":string}
 - {"type":"create_assessment","label":string,"subject_id":string,"name":string,"date":"YYYY-MM-DD","kind":"prova"|"mini-prova"|"entrega"|"seminario"|"extra","topics":string|null}
 - {"type":"move_assessment","label":string,"assessment_id":string,"date":"YYYY-MM-DD"}
@@ -269,6 +273,8 @@ Regras:
 - Se o usuário falar de algo que está nas "Sugestões do plano da semana" (ex.: "muda a academia de quarta para quinta", "tira o estudo de sábado"), use move_suggestion/remove_suggestion com o ref da lista. NÃO crie evento no calendário para isso: continua sendo sugestão. Só crie eventos quando for um compromisso novo com dia definido.
 - Avaliações marcadas [extra] são finais, segunda chamada ou reposição: só acontecem para quem precisa. Quando o usuário perguntar sobre "provas" (próxima, última, quantas), considere só as regulares; cite as extras à parte, se for útil.
 - Perguntas sobre a agenda ("quando é minha próxima prova?", "o que tenho essa semana?"): responda com datas e dias da semana a partir dos dados acima, sem propor ações.
+- Horários: se o usuário disser início e fim ("de 16 às 18", "das 16h às 18h"), preencha time E end_time exatamente assim. Sem fim informado, end_time null.
+- O que se repete toda semana (aula, eletiva, disciplina, treino fixo, reunião semanal: "eletiva de 16 às 18 na terça", "toda segunda tenho academia às 7") vai para a grade com create_slot, não para o calendário. Para aula/eletiva de disciplina não cadastrada, use subject_id null e new_subject_name com o nome.
 - Datas relativas ("sexta que vem", "adiada uma semana", "amanhã") são calculadas a partir de hoje ou da data atual do item.
 - Avisos de mudança ("prova adiada", "professor passou atividade para sexta") viram move_*/create_* sobre os itens existentes. Demandas, reuniões e entregas do CITi/empresa júnior usam kind "citi".
 - Se o usuário não quer estudar algo hoje: veja se há prova dessa disciplina nos próximos dias. Se a prova estiver longe, aceite e redistribua (mova os eventos de estudo de hoje ou crie sessões em outros dias). Se estiver perto (até 4 dias), negocie com gentileza: sugira uma sessão curta hoje e o resto depois, explicando o motivo.
@@ -307,7 +313,7 @@ export const interpretText = createServerFn({ method: "POST" })
     const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }, { data: slots }] = await Promise.all([
       sb.from("subjects").select("id,name"),
       sb.from("assessments").select("id,name,date,kind,subject_id").gte("date", from).lte("date", to).order("date"),
-      sb.from("events").select("id,title,kind,starts_at,subject_id").gte("starts_at", new Date(now.getTime() - 864e5).toISOString()).lte("starts_at", new Date(now.getTime() + 60 * 864e5).toISOString()).order("starts_at"),
+      sb.from("events").select("id,title,kind,starts_at,ends_at,subject_id").gte("starts_at", new Date(now.getTime() - 864e5).toISOString()).lte("starts_at", new Date(now.getTime() + 60 * 864e5).toISOString()).order("starts_at"),
       sb.from("goals").select("id,title,kind,times_per_week,target_hours,deadline,subject_id"),
       sb.from("schedule_slots").select("title,kind,weekday,start_time,end_time,subject_id"),
     ]);
@@ -315,7 +321,7 @@ export const interpretText = createServerFn({ method: "POST" })
     const ctx = [
       "Disciplinas:", ...((subjects ?? []).map((s) => `- ${s.id}: ${s.name}`)), (subjects ?? []).length ? "" : "(nenhuma)",
       "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.id}: ${a.date} [${isExtra(a) ? "extra" : a.kind}] ${a.name} — ${sName(a.subject_id)}`)), (assessments ?? []).length ? "" : "(nenhuma)",
-      "Compromissos (próximos 60 dias):", ...((events ?? []).map((e) => `- ${e.id}: ${localDateTime(e.starts_at)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)}` : ""}`)), (events ?? []).length ? "" : "(nenhum)",
+      "Compromissos (próximos 60 dias):", ...((events ?? []).map((e) => `- ${e.id}: ${eventWhen(e)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)}` : ""}`)), (events ?? []).length ? "" : "(nenhum)",
       "Metas flexíveis:", ...((goals ?? []).map((g) => `- ${g.id}: ${g.title} (${g.kind === "weekly" ? `${g.times_per_week}x/semana` : `${g.target_hours}h`})`)), (goals ?? []).length ? "" : "(nenhuma)",
       "Grade semanal (aulas e compromissos que repetem toda semana):", ...gradeLines(slots ?? [], sName), (slots ?? []).length ? "" : "(sem grade)",
       "Sugestões do plano da semana (NÃO estão no calendário; são só sugestões da IA):", ...planItems.map((p) => `- ${p.ref}: ${p.date} [${p.type}] ${p.title}`), planItems.length ? "" : "(nenhuma)",
@@ -421,7 +427,7 @@ Regras:
 - "recommendations": de 2 a 4 itens, os mais importantes da semana.
 - HORÁRIOS: não coloque as aulas da grade no quadro (elas já aparecem à parte), mas use a grade e os compromissos para saber o que está ocupado.
   - Provas/avaliações sem horário: se houver aula dessa disciplina na grade nesse dia da semana, a prova é no horário da aula (use start/end da aula e note "No horário da aula"). Senão, start/end null.
-  - Compromissos do calendário: use o horário deles (start; end = start + 1h se não souber).
+  - Compromissos do calendário: use o horário deles (start e end; só se não houver fim, end = start + 1h).
   - Sugestões: dê start/end em horários LIVRES entre 07:00 e 23:00, sem encostar em aulas, compromissos ou outras sugestões. Estudo de 1h a 2h, treino de 1h; se a grade tiver um treino fixo, prefira esse mesmo horário em outros dias. Descanso: start/end null.
 - Treinos da grade (ex.: academia todo domingo) também contam para as metas de atividade física.
 - CONSISTÊNCIA: o quadro e as recomendações precisam dizer a mesma coisa. Se a recomendação diz "academia 2x", o quadro tem exatamente 2 sugestões de academia. Confira antes de responder.${keep.length ? `
@@ -448,7 +454,7 @@ export const planWeek = createServerFn({ method: "POST" })
     const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }, { data: slots }] = await Promise.all([
       sb.from("subjects").select("id,name"),
       sb.from("assessments").select("id,name,date,kind,subject_id,topics").gte("date", from).lte("date", to).order("date"),
-      sb.from("events").select("id,title,kind,starts_at,subject_id").gte("starts_at", `${from}T00:00:00-03:00`).lte("starts_at", `${to}T23:59:59-03:00`).order("starts_at"),
+      sb.from("events").select("id,title,kind,starts_at,ends_at,subject_id").gte("starts_at", `${from}T00:00:00-03:00`).lte("starts_at", `${to}T23:59:59-03:00`).order("starts_at"),
       sb.from("goals").select("id,title,kind,times_per_week,target_hours,deadline,subject_id,done"),
       sb.from("schedule_slots").select("title,kind,weekday,start_time,end_time,subject_id"),
     ]);
@@ -457,7 +463,7 @@ export const planWeek = createServerFn({ method: "POST" })
       "Grade semanal (repete toda semana; são horários OCUPADOS):", ...gradeLines(slots ?? [], sName), (slots ?? []).length ? "" : "(sem grade cadastrada)",
       "Disciplinas:", ...((subjects ?? []).map((s) => `- ${s.id}: ${s.name}`)),
       "", "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.date} [${isExtra(a) ? "extra" : a.kind}] ${a.name} — ${sName(a.subject_id)} (subject_id ${a.subject_id})${a.topics ? ` — assuntos: ${a.topics}` : ""}`)),
-      "", "Compromissos:", ...((events ?? []).filter((e) => e.kind !== "feriado").map((e) => `- ${localDateTime(e.starts_at)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)} (subject_id ${e.subject_id})` : ""}`)),
+      "", "Compromissos:", ...((events ?? []).filter((e) => e.kind !== "feriado").map((e) => `- ${eventWhen(e)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)} (subject_id ${e.subject_id})` : ""}`)),
       "", "Feriados/dias sem aula:", ...((events ?? []).filter((e) => e.kind === "feriado").map((e) => `- ${isoDay(new Date(e.starts_at))} ${e.title}`)),
       "", "Metas flexíveis:", ...((goals ?? []).map((g) => `- ${g.title}: ${g.kind === "weekly" ? `${g.times_per_week}x por semana` : `${g.target_hours}h no total${g.deadline ? ` até ${g.deadline}` : ""} (feito: ${g.done}h)`}${g.subject_id ? ` — ${sName(g.subject_id)}` : ""}`)),
     ].join("\n");

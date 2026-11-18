@@ -5,14 +5,15 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { EVENT_KINDS, useTable, type Dump } from "@/lib/data";
+import { EVENT_KINDS, SLOT_KINDS, SUBJECT_COLORS, useTable, type Dump } from "@/lib/data";
 import { discardDump } from "@/components/despejo/Review";
 import { addSuggestion, moveSuggestion, removeSuggestion, weekDates } from "@/lib/plan-cache";
 
 // Ações que a IA pode propor a partir de um texto (ver interpretText em despejo.functions.ts)
 type Action =
-  | { type: "create_event"; label: string; title: string; kind: string; date: string; time: string; subject_id: string | null }
-  | { type: "move_event"; label: string; event_id: string; date: string; time: string }
+  | { type: "create_event"; label: string; title: string; kind: string; date: string; time: string; end_time?: string | null; subject_id: string | null }
+  | { type: "move_event"; label: string; event_id: string; date: string; time: string; end_time?: string | null }
+  | { type: "create_slot"; label: string; title: string; kind: string; weekday: number; start: string; end: string; subject_id: string | null; new_subject_name?: string | null }
   | { type: "delete_event"; label: string; event_id: string }
   | { type: "create_assessment"; label: string; subject_id: string; name: string; date: string; kind: string; topics: string | null }
   | { type: "move_assessment"; label: string; assessment_id: string; date: string }
@@ -47,6 +48,7 @@ export function TextReview({ dump }: { dump: Dump }) {
     switch (a.type) {
       case "create_event": return !!a.title && DATE.test(a.date) && subjOk(a.subject_id);
       case "move_event": return events.some((e) => e.id === a.event_id) && DATE.test(a.date);
+      case "create_slot": return !!a.title && Number(a.weekday) >= 1 && Number(a.weekday) <= 7 && TIME.test(a.start) && TIME.test(a.end) && a.end > a.start && subjOk(a.subject_id);
       case "delete_event": return events.some((e) => e.id === a.event_id);
       case "create_assessment": return subjects.some((s) => s.id === a.subject_id) && !!a.name && DATE.test(a.date);
       case "move_assessment": return assessments.some((x) => x.id === a.assessment_id) && DATE.test(a.date);
@@ -63,14 +65,38 @@ export function TextReview({ dump }: { dump: Dump }) {
 
   async function run(a: Action) {
     const at = (date: string, time?: string) => new Date(`${date}T${time && TIME.test(time) ? time : "12:00"}`).toISOString();
+    // Fim do compromisso: só quando for um horário válido depois do início
+    const endAt = (date: string, start?: string, end?: string | null) => (end && TIME.test(end) && start && TIME.test(start) && end > start ? new Date(`${date}T${end}`).toISOString() : null);
     let res: { error: { message: string } | null };
     switch (a.type) {
       case "create_event":
-        res = await supabase.from("events").insert({ title: a.title.slice(0, 120), kind: EVENT_KINDS[a.kind] ? a.kind : "outro", starts_at: at(a.date, a.time), subject_id: a.subject_id || null });
+        res = await supabase.from("events").insert({ title: a.title.slice(0, 120), kind: EVENT_KINDS[a.kind] ? a.kind : "outro", starts_at: at(a.date, a.time), ends_at: endAt(a.date, a.time, a.end_time), subject_id: a.subject_id || null });
         break;
       case "move_event":
-        res = await supabase.from("events").update({ starts_at: at(a.date, a.time) }).eq("id", a.event_id);
+      {
+        // Sem fim informado, mantém a duração que o compromisso já tinha
+        const ev = events.find((e) => e.id === a.event_id);
+        const start = at(a.date, a.time);
+        const dur = ev?.ends_at ? new Date(ev.ends_at).getTime() - new Date(ev.starts_at).getTime() : null;
+        const ends_at = endAt(a.date, a.time, a.end_time) ?? (dur && dur > 0 ? new Date(new Date(start).getTime() + dur).toISOString() : null);
+        res = await supabase.from("events").update({ starts_at: start, ends_at }).eq("id", a.event_id);
+      }
         break;
+      case "create_slot": {
+        let subjectId = a.subject_id || null;
+        if (!subjectId && a.new_subject_name?.trim()) {
+          const name = a.new_subject_name.trim().slice(0, 100);
+          const found = subjects.find((s) => s.name.toLowerCase() === name.toLowerCase());
+          if (found) subjectId = found.id;
+          else {
+            const { data, error } = await supabase.from("subjects").insert({ name, color: SUBJECT_COLORS[subjects.length % SUBJECT_COLORS.length]! }).select("id").single();
+            if (error) throw new Error(error.message);
+            subjectId = data.id;
+          }
+        }
+        res = await supabase.from("schedule_slots").insert({ title: a.title.slice(0, 100), kind: SLOT_KINDS[a.kind] ? a.kind : "outro", weekday: Number(a.weekday), start_time: a.start, end_time: a.end, subject_id: subjectId });
+        break;
+      }
       case "delete_event":
         res = await supabase.from("events").delete().eq("id", a.event_id);
         break;

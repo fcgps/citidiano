@@ -69,19 +69,20 @@ const sel = "h-9 w-full rounded-md border border-input bg-background px-3 text-s
 function EventDialog() {
   const [open, setOpen] = useState(false);
   const { data: subjects = [] } = useTable("subjects");
-  const [f, setF] = useState({ title: "", kind: "prova", date: "", time: "08:00", subject_id: "" });
+  const [f, setF] = useState({ title: "", kind: "prova", date: "", time: "08:00", end: "", subject_id: "" });
   const ins = useInsert("events");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild><Button className="rounded-full shadow-glow"><Plus className="h-4 w-4" /> Compromisso</Button></DialogTrigger>
       <DialogContent><DialogHeader><DialogTitle>Compromisso fixo</DialogTitle></DialogHeader>
-        <form className="space-y-4" onSubmit={async (e) => { e.preventDefault(); await ins.mutateAsync({ title: f.title.trim().slice(0, 120), kind: f.kind, starts_at: new Date(`${f.date}T${f.time}`).toISOString(), subject_id: f.subject_id || null }); setOpen(false); }}>
+        <form className="space-y-4" onSubmit={async (e) => { e.preventDefault(); await ins.mutateAsync({ title: f.title.trim().slice(0, 120), kind: f.kind, starts_at: new Date(`${f.date}T${f.time}`).toISOString(), ends_at: f.end && f.end > f.time ? new Date(`${f.date}T${f.end}`).toISOString() : null, subject_id: f.subject_id || null }); setOpen(false); }}>
           <div className="space-y-1.5"><Label>Título</Label><Input required maxLength={120} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Reunião de diretoria" /></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5"><Label>Tipo</Label><select className={sel} value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>{Object.entries(EVENT_KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
             <div className="space-y-1.5"><Label>Disciplina</Label><select className={sel} value={f.subject_id} onChange={(e) => setF({ ...f, subject_id: e.target.value })}><option value="">—</option>{subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
             <div className="space-y-1.5"><Label>Data</Label><Input required type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Hora</Label><Input required type="time" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} /></div>
+            <div className="space-y-1.5"><Label>Início</Label><Input required type="time" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} /></div>
+            <div className="space-y-1.5"><Label>Fim <span className="font-normal text-muted-foreground">(opcional)</span></Label><Input type="time" value={f.end} onChange={(e) => setF({ ...f, end: e.target.value })} /></div>
           </div>
           <Button type="submit" className="w-full rounded-full">Salvar</Button>
         </form>
@@ -137,7 +138,7 @@ function Calendario() {
   const subj = (id: string | null) => subjects.find((s) => s.id === id);
 
   const items: Item[] = useMemo(() => [
-    ...events.map((e) => { const d = parseISO(e.starts_at); return { id: e.id, title: e.title, date: d, time: format(d, "HH:mm"), color: subj(e.subject_id)?.color ?? KIND_COLORS[e.kind] ?? "#0F5132", kind: e.kind, cat: eventCat(e.kind, e.title), subjectId: e.subject_id, source: "event" as const }; }),
+    ...events.map((e) => { const d = parseISO(e.starts_at); return { id: e.id, title: e.title, date: d, time: format(d, "HH:mm") + (e.ends_at ? `–${format(parseISO(e.ends_at), "HH:mm")}` : ""), color: subj(e.subject_id)?.color ?? KIND_COLORS[e.kind] ?? "#0F5132", kind: e.kind, cat: eventCat(e.kind, e.title), subjectId: e.subject_id, source: "event" as const }; }),
     ...assessments.map((a) => { const kind = a.kind === "seminario" || a.kind === "entrega" ? "entrega" : "prova"; return { id: a.id, title: `${a.name} · ${subj(a.subject_id)?.name ?? ""}`, date: parseISO(a.date), color: subj(a.subject_id)?.color ?? "#00C853", kind, cat: assessmentCat(a), subjectId: a.subject_id, source: "assessment" as const }; }),
   ].sort((a, b) => a.date.getTime() - b.date.getTime()), [events, assessments, subjects]);
 
