@@ -27,7 +27,7 @@ function Index() {
       />
 
       {/* Logo grande no centro + botão de entrar */}
-      <section className="relative flex min-h-[85vh] flex-col items-center justify-center px-5 text-center">
+      <section className="relative flex min-h-[60vh] flex-col items-center justify-end px-5 pb-16 pt-20 text-center">
         <img src="/logo-escura.png" alt="CITidiano" className="h-24 w-auto drop-shadow-sm sm:h-32 md:h-44" />
         <Link to="/auth" className="mt-12 inline-flex items-center justify-center rounded-full bg-primary px-16 py-5 text-xl font-semibold text-primary-foreground shadow-glow transition hover:brightness-105">
           Entrar
@@ -35,7 +35,7 @@ function Index() {
       </section>
 
       {/* Textos abaixo */}
-      <section className="relative mx-auto max-w-5xl px-5 pb-24 text-center">
+      <section className="relative mx-auto max-w-5xl px-5 pb-20 text-center">
         <p className="eyebrow mb-6">Planejador para universitários</p>
         <h2 className="mx-auto max-w-4xl text-4xl font-light leading-[1.05] md:text-6xl">
           Seu <strong className="font-extrabold">cotidiano</strong> inteiro,{" "}
@@ -45,11 +45,6 @@ function Index() {
           Provas, entregas, reuniões da EJ, estágio e academia — tudo num lugar só, com{" "}
           <strong className="text-foreground">metas flexíveis</strong> que se encaixam na sua semana.
         </p>
-        <div className="mt-20 grid gap-10 border-t pt-10 sm:grid-cols-3">
-          {[["4", "áreas: painel, despejo, disciplinas e calendário"], ["2", "tipos de agenda: compromissos fixos e metas"], ["1", "lugar para tudo da sua semana"]].map(([n, l]) => (
-            <div key={l}><div className="text-6xl font-bold tracking-tighter">{n}</div><p className="mt-2 text-sm text-muted-foreground">{l}</p></div>
-          ))}
-        </div>
       </section>
     </div>
   );
