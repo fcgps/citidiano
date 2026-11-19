@@ -425,6 +425,8 @@ Regras:
 - "days" tem exatamente 7 dias, nas datas ${days.join(", ")}, nessa ordem.
 - Itens fixed=true são SOMENTE compromissos que existem nos dados desta semana (provas, mini-provas, entregas, listas, demandas do CITi, reuniões, treinos/estudos já marcados). Nunca invente compromissos fixos. Não inclua aulas.
 - Avaliações [extra] (final, 2ª chamada) entram como fixed com note "Só se precisar".
+- QUANTO ESTUDAR (regra principal): para cada prova nas próximas 3 semanas, reserve blocos de estudo de 1h a 2h nos dias ANTERIORES a ela, começando cedo: prova = 4 a 6 blocos começando 10 a 12 dias antes; mini-prova = 2 blocos nos 4 dias antes; lista/entrega = 1 a 2 blocos antes do prazo. Quanto mais perto da prova, mais blocos. Se as semanas seguintes concentram várias provas, adiante estudo para ESTA semana: cada dia livre que ainda não passou deve ter pelo menos 1 bloco de estudo de alguma prova que vem aí. Cite no "note" para qual prova é e o assunto.
+- Descanso só depois de cumprir o estudo necessário (ex.: noite de domingo ou um turno), nunca um dia inteiro de descanso quando há várias provas chegando.
 - Itens fixed=false são suas sugestões: blocos de estudo antes das provas (comece com antecedência, aumente perto da prova, cite os assuntos cobrados quando houver), treinos para cumprir as metas semanais, tempo para demandas da empresa júnior/CITi antes dos prazos (SÓ se houver compromissos ou grade desse tipo nos dados), e descanso. Nunca sugira treino sem meta ou treino nos dados, nem empresa júnior/CITi sem ela aparecer nos dados.
 - Treinos e esportes já marcados na agenda (compromissos [treino], ex.: pelada, futebol, corrida) CONTAM para metas de atividade física da mesma semana: se a meta é academia 3x e já há 1 pelada marcada, sugira só mais 2. Diga isso na recomendação.
 - Distribua as metas semanais (ex.: academia 3x) olhando também as semanas seguintes: se a próxima semana for pesada, adiante treinos nesta; em dias de prova, prefira descanso ou treino leve. Explique isso nas recomendações.
@@ -435,7 +437,7 @@ Regras:
 - HORÁRIOS: não coloque as aulas da grade no quadro (elas já aparecem à parte), mas use a grade e os compromissos para saber o que está ocupado.
   - Provas/avaliações sem horário: se houver aula dessa disciplina na grade nesse dia da semana, a prova é no horário da aula (use start/end da aula e note "No horário da aula"). Senão, start/end null.
   - Compromissos do calendário: use o horário deles (start e end; só se não houver fim, end = start + 1h).
-  - Sugestões: dê start/end em horários LIVRES entre 07:00 e 23:00, sem encostar em aulas, compromissos ou outras sugestões. Estudo de 1h a 2h, treino de 1h; se a grade tiver um treino fixo, prefira esse mesmo horário em outros dias. Descanso: start/end null.
+  - Sugestões: TODA sugestão de estudo e treino precisa de start/end, em horários LIVRES entre 07:00 e 23:00, sem encostar em aulas, compromissos ou outras sugestões. Estudo de 1h a 2h, treino de 1h; se a grade tiver um treino fixo, prefira esse mesmo horário em outros dias. Descanso: start/end null.
 - Treinos da grade (ex.: academia todo domingo) também contam para as metas de atividade física.
 - CONSISTÊNCIA: o quadro e as recomendações precisam dizer a mesma coisa. Se a recomendação diz "academia 2x", o quadro tem exatamente 2 sugestões de academia. Confira antes de responder.${keep.length ? `
 
@@ -466,7 +468,13 @@ export const planWeek = createServerFn({ method: "POST" })
       sb.from("schedule_slots").select("title,kind,weekday,start_time,end_time,subject_id"),
     ]);
     const sName = (id: string | null) => (subjects ?? []).find((s) => s.id === id)?.name ?? "";
+    const todayIso = isoDay(new Date());
+    const daysUntil = (d: string) => Math.round((Date.parse(`${d}T12:00:00Z`) - Date.parse(`${todayIso}T12:00:00Z`)) / 864e5);
+    const upcoming = (assessments ?? []).filter((a) => daysUntil(a.date) >= 0 && daysUntil(a.date) <= 21 && !isExtra(a));
     const ctx = [
+      `PROVAS E ENTREGAS QUE ESTÃO CHEGANDO (hoje é ${todayIso}) — a prioridade do plano:`,
+      ...upcoming.map((a) => `- em ${daysUntil(a.date)} dia(s), ${a.date}: [${a.kind}] ${a.name} — ${sName(a.subject_id)} (subject_id ${a.subject_id})${a.topics ? ` — assuntos: ${a.topics}` : ""}`),
+      upcoming.length ? "" : "(nenhuma nas próximas 3 semanas)",
       "Grade semanal (repete toda semana; são horários OCUPADOS):", ...gradeLines(slots ?? [], sName), (slots ?? []).length ? "" : "(sem grade cadastrada)",
       "Disciplinas:", ...((subjects ?? []).map((s) => `- ${s.id}: ${s.name}`)),
       "", "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.date} [${isExtra(a) ? "extra" : a.kind}] ${a.name} — ${sName(a.subject_id)} (subject_id ${a.subject_id})${a.topics ? ` — assuntos: ${a.topics}` : ""}`)),
@@ -479,8 +487,9 @@ export const planWeek = createServerFn({ method: "POST" })
     try {
       res = await callGemini(key, {
         contents: [{ role: "user", parts: [{ text: planPrompt(from, isoDay(new Date()), ctx, data.keep) }] }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.4, thinkingConfig: { thinkingLevel: "low" } },
-      });
+        // Planejar três semanas de provas pede raciocínio: "medium" e mais tempo antes do modelo reserva
+        generationConfig: { responseMimeType: "application/json", temperature: 0.3, thinkingConfig: { thinkingLevel: "medium" } },
+      }, 40_000, 70_000);
     } catch (e) {
       console.error(e);
       return { ok: false as const, error: "Não consegui falar com a IA. Tente de novo em instantes." };
