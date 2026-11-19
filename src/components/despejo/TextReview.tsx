@@ -17,6 +17,7 @@ type Action =
   | { type: "delete_event"; label: string; event_id: string }
   | { type: "create_assessment"; label: string; subject_id: string; name: string; date: string; kind: string; topics: string | null }
   | { type: "move_assessment"; label: string; assessment_id: string; date: string }
+  | { type: "delete_assessment"; label: string; assessment_id: string }
   | { type: "create_goal"; label: string; title: string; kind: string; times_per_week: number | null; target_hours: number | null; subject_id: string | null; deadline: string | null }
   | { type: "move_suggestion"; label: string; ref: string; date: string; start?: string | null; end?: string | null }
   | { type: "remove_suggestion"; label: string; ref: string }
@@ -52,6 +53,7 @@ export function TextReview({ dump }: { dump: Dump }) {
       case "delete_event": return events.some((e) => e.id === a.event_id);
       case "create_assessment": return subjects.some((s) => s.id === a.subject_id) && !!a.name && DATE.test(a.date);
       case "move_assessment": return assessments.some((x) => x.id === a.assessment_id) && DATE.test(a.date);
+      case "delete_assessment": return assessments.some((x) => x.id === a.assessment_id);
       case "create_goal": return !!a.title;
       case "move_suggestion": return !!suggestion(a.ref) && inPlanWeek(a.date);
       case "remove_suggestion": return !!suggestion(a.ref);
@@ -105,6 +107,9 @@ export function TextReview({ dump }: { dump: Dump }) {
         break;
       case "move_assessment":
         res = await supabase.from("assessments").update({ date: a.date }).eq("id", a.assessment_id);
+        break;
+      case "delete_assessment":
+        res = await supabase.from("assessments").delete().eq("id", a.assessment_id);
         break;
       case "create_goal": {
         const weekly = a.kind !== "hours";

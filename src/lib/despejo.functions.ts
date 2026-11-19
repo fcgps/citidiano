@@ -266,6 +266,7 @@ Ações possíveis (cada uma com "label": frase curta descrevendo a ação, ex.:
 - {"type":"delete_event","label":string,"event_id":string}
 - {"type":"create_assessment","label":string,"subject_id":string,"name":string,"date":"YYYY-MM-DD","kind":"prova"|"mini-prova"|"entrega"|"seminario"|"extra","topics":string|null}
 - {"type":"move_assessment","label":string,"assessment_id":string,"date":"YYYY-MM-DD"}
+- {"type":"delete_assessment","label":string,"assessment_id":string}
 - {"type":"create_goal","label":string,"title":string,"kind":"weekly"|"hours","times_per_week":number|null,"target_hours":number|null,"subject_id":string|null,"deadline":"YYYY-MM-DD"|null}
 - {"type":"move_suggestion","label":string,"ref":string,"date":"YYYY-MM-DD","start":"HH:MM"|null,"end":"HH:MM"|null}   (mover uma sugestão do plano da semana para outro dia da mesma semana)
 - {"type":"remove_suggestion","label":string,"ref":string}
@@ -273,6 +274,7 @@ Ações possíveis (cada uma com "label": frase curta descrevendo a ação, ex.:
 
 Regras:
 - Se o usuário falar de algo que está nas "Sugestões do plano da semana" (ex.: "muda a academia de quarta para quinta", "tira o estudo de sábado"), use move_suggestion/remove_suggestion com o ref da lista. NÃO crie evento no calendário para isso: continua sendo sugestão. Só crie eventos quando for um compromisso novo com dia definido.
+- Para apagar algo que o usuário diz estar errado ("apaga essa prova", "isso não existe"), procure tanto nas avaliações quanto nos compromissos (uma prova sem disciplina é um compromisso [prova]) e use delete_assessment ou delete_event com o id certo.
 - Avaliações marcadas [extra] são finais, segunda chamada ou reposição: só acontecem para quem precisa. Quando o usuário perguntar sobre "provas" (próxima, última, quantas), considere só as regulares; cite as extras à parte, se for útil.
 - Perguntas sobre a agenda ("quando é minha próxima prova?", "o que tenho essa semana?"): responda com datas e dias da semana a partir dos dados acima, sem propor ações.
 - Horários: se o usuário disser início e fim ("de 16 às 18", "das 16h às 18h"), preencha time E end_time exatamente assim. Sem fim informado, end_time null.
@@ -314,8 +316,8 @@ export const interpretText = createServerFn({ method: "POST" })
     const to = isoDay(new Date(now.getTime() + 150 * 864e5));
     const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }, { data: slots }] = await Promise.all([
       sb.from("subjects").select("id,name"),
-      sb.from("assessments").select("id,name,date,kind,subject_id").gte("date", from).lte("date", to).order("date"),
-      sb.from("events").select("id,title,kind,starts_at,ends_at,subject_id").gte("starts_at", new Date(now.getTime() - 864e5).toISOString()).lte("starts_at", new Date(now.getTime() + 60 * 864e5).toISOString()).order("starts_at"),
+      sb.from("assessments").select("id,name,date,kind,subject_id").gte("date", isoDay(new Date(now.getTime() - 60 * 864e5))).lte("date", to).order("date"),
+      sb.from("events").select("id,title,kind,starts_at,ends_at,subject_id").gte("starts_at", new Date(now.getTime() - 60 * 864e5).toISOString()).lte("starts_at", new Date(now.getTime() + 180 * 864e5).toISOString()).order("starts_at").limit(300),
       sb.from("goals").select("id,title,kind,times_per_week,target_hours,deadline,subject_id"),
       sb.from("schedule_slots").select("title,kind,weekday,start_time,end_time,subject_id"),
     ]);
@@ -323,7 +325,7 @@ export const interpretText = createServerFn({ method: "POST" })
     const ctx = [
       "Disciplinas:", ...((subjects ?? []).map((s) => `- ${s.id}: ${s.name}`)), (subjects ?? []).length ? "" : "(nenhuma)",
       "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.id}: ${a.date} [${isExtra(a) ? "extra" : a.kind}] ${a.name} — ${sName(a.subject_id)}`)), (assessments ?? []).length ? "" : "(nenhuma)",
-      "Compromissos (próximos 60 dias):", ...((events ?? []).map((e) => `- ${e.id}: ${eventWhen(e)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)}` : ""}`)), (events ?? []).length ? "" : "(nenhum)",
+      "Compromissos (dos últimos 60 dias aos próximos 6 meses):", ...((events ?? []).map((e) => `- ${e.id}: ${eventWhen(e)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)}` : ""}`)), (events ?? []).length ? "" : "(nenhum)",
       "Metas flexíveis:", ...((goals ?? []).map((g) => `- ${g.id}: ${g.title} (${g.kind === "weekly" ? `${g.times_per_week}x/semana` : `${g.target_hours}h`})`)), (goals ?? []).length ? "" : "(nenhuma)",
       "Grade semanal (aulas e compromissos que repetem toda semana):", ...gradeLines(slots ?? [], sName), (slots ?? []).length ? "" : "(sem grade)",
       "Sugestões do plano da semana (NÃO estão no calendário; são só sugestões da IA):", ...planItems.map((p) => `- ${p.ref}: ${p.date} [${p.type}] ${p.title}`), planItems.length ? "" : "(nenhuma)",

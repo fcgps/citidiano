@@ -123,7 +123,7 @@ function Chip({ it, compact }: { it: Item; compact?: boolean }) {
         {!compact && <div className="font-mono text-[10px] uppercase opacity-80">{it.time ?? "Dia todo"} · {EVENT_KINDS[it.kind] ?? it.kind}</div>}
         <div className="truncate font-semibold">{it.title}</div>
       </div>
-      {it.source === "event" && !compact && <button onClick={() => rm.mutate(it.id)} className="opacity-0 group-hover:opacity-100" aria-label="Excluir"><Trash2 className="h-3 w-3" /></button>}
+      {it.source === "event" && <button onClick={(e) => { e.stopPropagation(); if (confirm(`Apagar "${it.title}"?`)) rm.mutate(it.id); }} className="shrink-0 opacity-0 group-hover:opacity-100" aria-label="Excluir"><Trash2 className="h-3 w-3" /></button>}
     </div>
   );
 }
