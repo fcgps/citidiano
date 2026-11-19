@@ -33,6 +33,20 @@ function AuthPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Link de confirmação que falhou (expirado, já usado ou de um e-mail antigo): o sistema de
+    // login avisa no endereço (#error=...&error_code=otp_expired). Antes isso era ignorado.
+    try {
+      const params = new URLSearchParams((window.location.hash || "").replace(/^#/, "") || window.location.search);
+      const code = params.get("error_code") ?? params.get("error");
+      if (code) {
+        setMode("login");
+        setUnconfirmed(true);
+        toast.error(/expired|otp/i.test(code) || /expired/i.test(params.get("error_description") ?? "")
+          ? "Esse link de confirmação expirou ou já foi usado. Digite seu e-mail abaixo e clique em \"Reenviar e-mail de confirmação\"; use sempre o e-mail mais recente."
+          : "Não consegui confirmar seu e-mail por esse link. Peça um novo abaixo.");
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    } catch { /* ignora */ }
     supabase.auth.getUser().then(({ data }) => data.user && navigate({ to: "/painel" }));
     // Quem chega pelo link de confirmação do e-mail entra sozinho assim que a sessão é lida da URL
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
