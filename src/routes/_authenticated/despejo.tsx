@@ -21,6 +21,7 @@ export const Route = createFileRoute("/_authenticated/despejo")({
 });
 
 function Despejo() {
+  const qc = useQueryClient();
   const { data: dumps = [], isSuccess: dumpsLoaded } = useTable("dumps");
   const { data: subjects = [] } = useTable("subjects");
   const { data: topics = [] } = useTable("topics");
@@ -53,13 +54,27 @@ function Despejo() {
         </section>
       ))}
       <section className="mt-14">
-        <p className="eyebrow mb-4">Histórico</p>
+        <div className="mb-4 flex items-baseline justify-between">
+          <p className="eyebrow">Histórico</p>
+          {history.some((d) => d.status !== "analyzing") && (
+            <button onClick={() => confirm("Limpar o histórico? O que já foi salvo (provas, grade, materiais) continua no app.") && removeFromHistory(history.filter((d) => d.status !== "analyzing"), qc)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">Limpar histórico</button>
+          )}
+        </div>
         {history.length === 0 ? <p className="text-sm text-muted-foreground">Nada por aqui ainda. Que tal jogar o cronograma de uma disciplina?</p> : (
           <ul className="divide-y rounded-2xl border bg-background">{history.map((d) => <HistoryRow key={d.id} d={d} />)}</ul>
         )}
       </section>
     </>
   );
+}
+
+// Tira itens do histórico. Só apaga o registro: o que já foi salvo (provas, grade, materiais)
+// continua no app. Arquivo de item com erro, que não foi usado em nada, também é apagado.
+async function removeFromHistory(items: Dump[], qc: ReturnType<typeof useQueryClient>) {
+  const unused = items.filter((d) => d.status === "error" && d.path).map((d) => d.path);
+  if (unused.length) await supabase.storage.from("materiais").remove(unused);
+  if (items.length) await supabase.from("dumps").delete().in("id", items.map((d) => d.id));
+  qc.invalidateQueries({ queryKey: ["dumps"] });
 }
 
 function HistoryRow({ d }: { d: Dump }) {
@@ -86,7 +101,7 @@ function HistoryRow({ d }: { d: Dump }) {
       </div>
       {(d.status === "error" || stuck) && d.doc_type !== "desconhecido" && <button onClick={retry} className="flex items-center gap-1 text-xs font-semibold text-primary-deep"><RotateCw className="h-3.5 w-3.5" />Tentar de novo</button>}
       {d.status === "analyzing" && !stuck && <button onClick={() => discardDump(d, qc, "Cancelado")} className="text-xs text-muted-foreground hover:text-foreground">Cancelar</button>}
-      {(d.status === "error" || stuck) && <button onClick={() => discardDump(d, qc)} className="text-xs text-muted-foreground hover:text-foreground">Remover</button>}
+      {(d.status !== "analyzing" || stuck) && <button onClick={() => removeFromHistory([d], qc)} className="text-xs text-muted-foreground hover:text-foreground">Remover</button>}
       <span className="hidden font-mono text-[10px] uppercase text-muted-foreground sm:block">{formatDistanceToNow(new Date(d.created_at), { locale: ptBR, addSuffix: true })}</span>
     </li>
   );
