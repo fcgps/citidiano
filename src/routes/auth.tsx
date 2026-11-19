@@ -29,11 +29,23 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [showPw, setShowPw] = useState(false);
+  const [unconfirmed, setUnconfirmed] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => data.user && navigate({ to: "/painel" }));
+    // Quem chega pelo link de confirmação do e-mail entra sozinho assim que a sessão é lida da URL
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION")) navigate({ to: "/painel" });
+    });
+    return () => data.subscription.unsubscribe();
   }, [navigate]);
+
+  async function resend() {
+    const { error } = await supabase.auth.resend({ type: "signup", email, options: { emailRedirectTo: window.location.origin + "/auth" } });
+    if (error) toast.error(/rate|limit/i.test(error.message) ? "Muitos e-mails enviados. Espere alguns minutos e tente de novo." : error.message);
+    else toast.success("Enviamos um novo link de confirmação. Confira também o spam.");
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,10 +54,18 @@ function AuthPage() {
     if (mode === "login") {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       setLoading(false);
-      if (error) { toast.error("E-mail ou senha inválidos."); return; }
+      if (error) {
+        // Mostra o motivo real (antes, todo erro virava "e-mail ou senha inválidos")
+        const msg = `${(error as { code?: string }).code ?? ""} ${error.message}`;
+        if (/not.?confirmed/i.test(msg)) { setUnconfirmed(true); toast.error("Seu e-mail ainda não foi confirmado. Abra o link que enviamos ou peça um novo abaixo."); }
+        else if (/rate|limit|too many/i.test(msg)) toast.error("Muitas tentativas seguidas. Espere alguns minutos e tente de novo.");
+        else if (/invalid|credentials/i.test(msg)) toast.error("E-mail ou senha incorretos. Use o olho para conferir a senha.");
+        else toast.error(error.message);
+        return;
+      }
       navigate({ to: "/painel" });
     } else {
-      const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin + "/painel" } });
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin + "/auth" } });
       setLoading(false);
       if (error) { toast.error(error.message); return; }
       if (data.session) navigate({ to: "/painel" }); else setSent(true);
@@ -85,6 +105,9 @@ function AuthPage() {
                 </div>
               </div>
               <Button type="submit" disabled={loading} className="h-11 w-full rounded-full font-semibold shadow-glow">{loading ? "Aguarde…" : mode === "login" ? "Entrar" : "Criar conta"}</Button>
+              {unconfirmed && mode === "login" && (
+                <button type="button" onClick={resend} className="w-full text-center text-sm font-semibold text-primary-deep hover:underline">Reenviar e-mail de confirmação</button>
+              )}
             </form>
           )}
           <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setSent(false); }} className="mt-6 text-sm text-muted-foreground">
