@@ -556,7 +556,10 @@ export const planWeek = createServerFn({ method: "POST" })
     if (target > 0) {
       const all = days.flatMap((d) => d.items);
       const gradeTreinos = (slots ?? []).filter((g) => g.kind === "treino" || PHYSICAL_RE.test(g.title)).length;
-      let allowed = Math.max(0, target - gradeTreinos - all.filter((it) => it.type === "treino" && (it.fixed || it.edited)).length);
+      // Treinos já na agenda desta semana (feitos ou marcados), contados direto dos dados, não da resposta da IA
+      const weekEnd = addDaysIso(from, 6);
+      const treinosNaAgenda = (events ?? []).filter((e) => e.kind !== "feriado" && (e.kind === "treino" || PHYSICAL_RE.test(e.title))).filter((e) => { const d = isoDay(new Date(e.starts_at)); return d >= from && d <= weekEnd; }).length;
+      let allowed = Math.max(0, target - gradeTreinos - treinosNaAgenda - all.filter((it) => it.type === "treino" && it.edited).length);
       for (const d of days) {
         d.items = d.items.filter((it) => {
           if (it.type !== "treino" || it.fixed || it.edited) return true;

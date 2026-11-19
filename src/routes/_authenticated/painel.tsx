@@ -28,7 +28,10 @@ function Painel() {
   ].filter((x) => x.date >= today && x.date <= addDays(today, 30)).sort((a, b) => +a.date - +b.date);
   const thisWeek = upcoming.filter((x) => isWithinInterval(x.date, week)).length;
   const eventsWeek = events.filter((e) => isWithinInterval(parseISO(e.starts_at), week)).length;
-  const goalsDone = goals.filter((g) => Number(g.done) >= (g.kind === "weekly" ? g.times_per_week ?? 1 : Number(g.target_hours ?? 1))).length;
+  // Meta semanal: conta os registros desta semana na agenda (mesmo critério do cartão da meta)
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }), weekEnd = addDays(weekStart, 7);
+  const doneThisWeek = (title: string) => events.filter((e) => e.title === title && (e.kind === "treino" || e.kind === "estudo" || e.kind === "outro") && parseISO(e.starts_at) >= weekStart && parseISO(e.starts_at) < weekEnd).length;
+  const goalsDone = goals.filter((g) => (g.kind === "weekly" ? doneThisWeek(g.title) >= (g.times_per_week ?? 1) : Number(g.done) >= Number(g.target_hours ?? 1))).length;
 
   return (
     <>
