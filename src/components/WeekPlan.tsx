@@ -66,14 +66,20 @@ export function WeekPlan() {
   const weekRef = useRef(week);
   weekRef.current = week;
 
+  // Botão "Refazer plano": avisa quando há ajustes feitos à mão, que serão substituídos
+  function redo() {
+    if (editedSuggestions(week).length && !confirm("Refazer o plano do zero? Os ajustes que você fez nas sugestões desta semana serão substituídos.")) return;
+    run();
+  }
+
   async function run() {
     if (busy) return;
     const w = week; // a semana pode mudar enquanto a IA responde
     setBusy(true);
     setError(null);
     try {
-      // Sugestões que o usuário mexeu à mão são mantidas no plano novo
-      const r = await generate({ data: { weekStart: w, keep: editedSuggestions(w) } });
+      // Refazer = plano novo do zero (ajustes antigos ficavam grudados e travavam a semana)
+      const r = await generate({ data: { weekStart: w, keep: [] } });
       if (!r.ok) { if (weekRef.current === w) { setError(r.error); toast.error(r.error); } return; }
       const c = { plan: r.plan, sig, at: new Date().toISOString() };
       writeCache(w, c);
@@ -129,14 +135,14 @@ export function WeekPlan() {
         <div className="flex items-center gap-2">
           <button onClick={() => setOffset(0)} disabled={offset === 0} className="rounded-full border p-2 disabled:opacity-30" aria-label="Esta semana"><ChevronLeft className="h-4 w-4" /></button>
           <button onClick={() => setOffset(1)} disabled={offset === 1} className="rounded-full border p-2 disabled:opacity-30" aria-label="Próxima semana"><ChevronRight className="h-4 w-4" /></button>
-          <button onClick={run} disabled={busy || !loaded} className="flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold disabled:opacity-50">
+          <button onClick={redo} disabled={busy || !loaded} className="flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold disabled:opacity-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}{plan ? "Refazer plano" : "Montar plano"}
           </button>
         </div>
       </div>
 
       {outdated && !busy && (
-        <button onClick={run} className="mb-4 w-full rounded-2xl border border-amber-300 bg-amber-50/70 p-3 text-left text-sm dark:bg-amber-950/30">
+        <button onClick={redo} className="mb-4 w-full rounded-2xl border border-amber-300 bg-amber-50/70 p-3 text-left text-sm dark:bg-amber-950/30">
           <strong>Sua agenda mudou</strong> desde que este plano foi feito. <span className="font-semibold text-primary-deep">Refazer agora →</span>
         </button>
       )}
@@ -147,7 +153,7 @@ export function WeekPlan() {
         </div>
       )}
       {!busy && !plan && error && (
-        <div className="rounded-3xl border border-dashed p-8 text-center text-sm text-muted-foreground">{error} <button onClick={run} className="font-semibold text-primary-deep">Tentar de novo</button></div>
+        <div className="rounded-3xl border border-dashed p-8 text-center text-sm text-muted-foreground">{error} <button onClick={redo} className="font-semibold text-primary-deep">Tentar de novo</button></div>
       )}
 
       {plan && (
