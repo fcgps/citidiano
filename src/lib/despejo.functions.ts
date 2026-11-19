@@ -320,7 +320,7 @@ export const interpretText = createServerFn({ method: "POST" })
     const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }, { data: slots }] = await Promise.all([
       sb.from("subjects").select("id,name"),
       sb.from("assessments").select("id,name,date,kind,subject_id").gte("date", isoDay(new Date(now.getTime() - 60 * 864e5))).lte("date", to).order("date"),
-      sb.from("events").select("id,title,kind,starts_at,ends_at,subject_id").gte("starts_at", new Date(now.getTime() - 60 * 864e5).toISOString()).lte("starts_at", new Date(now.getTime() + 180 * 864e5).toISOString()).order("starts_at").limit(300),
+      sb.from("events").select("id,title,kind,starts_at,ends_at,subject_id").gte("starts_at", new Date(now.getTime() - 60 * 864e5).toISOString()).lte("starts_at", new Date(now.getTime() + 180 * 864e5).toISOString()).neq("kind", "registro").order("starts_at").limit(300),
       sb.from("goals").select("id,title,kind,times_per_week,target_hours,deadline,subject_id"),
       sb.from("schedule_slots").select("title,kind,weekday,start_time,end_time,subject_id"),
     ]);
@@ -460,13 +460,17 @@ export const planWeek = createServerFn({ method: "POST" })
 
     const from = data.weekStart;
     const to = addDaysIso(from, 20);
-    const [{ data: subjects }, { data: assessments }, { data: events }, { data: goals }, { data: slots }] = await Promise.all([
+    const [{ data: subjects }, { data: assessments }, { data: allEvents }, { data: logs }, { data: goals }, { data: slots }] = await Promise.all([
       sb.from("subjects").select("id,name"),
       sb.from("assessments").select("id,name,date,kind,subject_id,topics").gte("date", from).lte("date", to).order("date"),
       sb.from("events").select("id,title,kind,starts_at,ends_at,subject_id").gte("starts_at", `${from}T00:00:00-03:00`).lte("starts_at", `${to}T23:59:59-03:00`).order("starts_at"),
+      sb.from("events").select("title,starts_at").eq("kind", "registro").gte("starts_at", `${from}T00:00:00-03:00`).lte("starts_at", `${addDaysIso(from, 6)}T23:59:59-03:00`),
       sb.from("goals").select("id,title,kind,times_per_week,target_hours,deadline,subject_id,done"),
       sb.from("schedule_slots").select("title,kind,weekday,start_time,end_time,subject_id"),
     ]);
+    const events = (allEvents ?? []).filter((e) => e.kind !== "registro");
+    // Quantas vezes cada meta já foi cumprida nesta semana (o "+" das metas)
+    const doneCount = (title: string) => (logs ?? []).filter((l) => l.title === title).length;
     const sName = (id: string | null) => (subjects ?? []).find((s) => s.id === id)?.name ?? "";
     const todayIso = isoDay(new Date());
     const daysUntil = (d: string) => Math.round((Date.parse(`${d}T12:00:00Z`) - Date.parse(`${todayIso}T12:00:00Z`)) / 864e5);
@@ -480,7 +484,7 @@ export const planWeek = createServerFn({ method: "POST" })
       "", "Avaliações:", ...((assessments ?? []).map((a) => `- ${a.date} [${isExtra(a) ? "extra" : a.kind}] ${a.name} — ${sName(a.subject_id)} (subject_id ${a.subject_id})${a.topics ? ` — assuntos: ${a.topics}` : ""}`)),
       "", "Compromissos:", ...((events ?? []).filter((e) => e.kind !== "feriado").map((e) => `- ${eventWhen(e)} [${e.kind}] ${e.title}${e.subject_id ? ` — ${sName(e.subject_id)} (subject_id ${e.subject_id})` : ""}`)),
       "", "Feriados/dias sem aula:", ...((events ?? []).filter((e) => e.kind === "feriado").map((e) => `- ${isoDay(new Date(e.starts_at))} ${e.title}`)),
-      "", "Metas flexíveis:", ...((goals ?? []).map((g) => `- ${g.title}: ${g.kind === "weekly" ? `${g.times_per_week}x por semana` : `${g.target_hours}h no total${g.deadline ? ` até ${g.deadline}` : ""} (feito: ${g.done}h)`}${g.subject_id ? ` — ${sName(g.subject_id)}` : ""}`)),
+      "", "Metas flexíveis:", ...((goals ?? []).map((g) => `- ${g.title}: ${g.kind === "weekly" ? `${g.times_per_week}x por semana (já feito nesta semana: ${doneCount(g.title)}x; sugira só o que falta)` : `${g.target_hours}h no total${g.deadline ? ` até ${g.deadline}` : ""} (feito: ${g.done}h)`}${g.subject_id ? ` — ${sName(g.subject_id)}` : ""}`)),
     ].join("\n");
 
     let res: Response;
@@ -559,7 +563,8 @@ export const planWeek = createServerFn({ method: "POST" })
       // Treinos já na agenda desta semana (feitos ou marcados), contados direto dos dados, não da resposta da IA
       const weekEnd = addDaysIso(from, 6);
       const treinosNaAgenda = (events ?? []).filter((e) => e.kind !== "feriado" && (e.kind === "treino" || PHYSICAL_RE.test(e.title))).filter((e) => { const d = isoDay(new Date(e.starts_at)); return d >= from && d <= weekEnd; }).length;
-      let allowed = Math.max(0, target - gradeTreinos - treinosNaAgenda - all.filter((it) => it.type === "treino" && it.edited).length);
+      const feitos = (goals ?? []).filter((g) => g.kind === "weekly" && PHYSICAL_RE.test(g.title)).reduce((n, g) => n + doneCount(g.title), 0);
+      let allowed = Math.max(0, target - gradeTreinos - treinosNaAgenda - feitos - all.filter((it) => it.type === "treino" && it.edited).length);
       for (const d of days) {
         d.items = d.items.filter((it) => {
           if (it.type !== "treino" || it.fixed || it.edited) return true;

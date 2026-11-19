@@ -53,7 +53,7 @@ export function WeekPlan() {
     const inRange = (d: Date) => d >= weekStart && d <= end;
     return [
       ...assessments.filter((a) => inRange(parseISO(a.date))).map((a) => `${a.id}${a.date}${a.name}`),
-      ...events.filter((e) => inRange(parseISO(e.starts_at))).map((e) => `${e.id}${e.starts_at}${e.title}`),
+      ...events.filter((e) => e.kind !== "registro" && inRange(parseISO(e.starts_at))).map((e) => `${e.id}${e.starts_at}${e.title}`),
       ...goals.map((g) => `${g.id}${g.times_per_week}${g.target_hours}`),
       ...slots.map((g) => `${g.id}${g.weekday}${g.start_time}${g.end_time}`),
     ].sort().join("|");

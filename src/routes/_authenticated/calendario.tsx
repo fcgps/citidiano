@@ -131,7 +131,8 @@ function Chip({ it, compact }: { it: Item; compact?: boolean }) {
 function Calendario() {
   const [view, setView] = useState<"week" | "month">("week");
   const [cursor, setCursor] = useState(new Date());
-  const { data: events = [] } = useTable("events");
+  const { data: allEvents = [] } = useTable("events");
+  const events = allEvents.filter((e) => e.kind !== "registro"); // registros das metas ("+") não aparecem
   const { data: assessments = [] } = useTable("assessments");
   const { data: subjects = [] } = useTable("subjects");
   const { data: goals = [] } = useTable("goals");

@@ -4,11 +4,9 @@ import { useInsert, useUpdate, useRemove, useTable, type Goal, type Subject } fr
 
 export function goalTarget(g: Goal) { return g.kind === "weekly" ? g.times_per_week ?? 1 : Number(g.target_hours ?? 1); }
 
-const PHYSICAL_RE = /academia|treino|muscula|pelada|futebol|corrida|correr|nata[cç][aã]o|esporte|caminhada|bike|pedal|luta|crossfit|yoga|pilates/i;
-
-// Meta semanal: cada "+" registra a atividade na agenda (hoje, agora). O progresso conta só
-// os registros desta semana, então zera sozinho toda segunda, e o plano da semana enxerga o
-// que já foi feito (ex.: academia 3x com 1 já feita → sugere só mais 2).
+// Meta semanal: cada "+" guarda um registro invisível (evento kind "registro", que não aparece
+// no calendário nem no plano). O contador soma só os registros desta semana, então zera sozinho
+// toda segunda, e o plano desconta o que já foi feito (academia 3x com 1 feita → sugere só mais 2).
 // Meta em horas: o "+" soma 1h ao total, como antes.
 export function GoalCard({ g, subject }: { g: Goal; subject?: Subject | undefined }) {
   const up = useUpdate("goals"); const rm = useRemove("goals"); const ins = useInsert("events");
@@ -16,13 +14,13 @@ export function GoalCard({ g, subject }: { g: Goal; subject?: Subject | undefine
   const weekly = g.kind === "weekly";
   const target = goalTarget(g);
   const start = startOfWeek(new Date(), { weekStartsOn: 1 }), end = addDays(start, 7);
-  const doneThisWeek = events.filter((e) => e.title === g.title && (e.kind === "treino" || e.kind === "estudo" || e.kind === "outro") && parseISO(e.starts_at) >= start && parseISO(e.starts_at) < end).length;
+  const doneThisWeek = events.filter((e) => e.kind === "registro" && e.title === g.title && parseISO(e.starts_at) >= start && parseISO(e.starts_at) < end).length;
   const done = weekly ? doneThisWeek : Number(g.done);
   const pct = Math.min(100, (done / target) * 100);
   const unit = weekly ? "x" : "h";
 
   function add() {
-    if (weekly) ins.mutate({ title: g.title, kind: PHYSICAL_RE.test(g.title) ? "treino" : g.subject_id ? "estudo" : "outro", starts_at: new Date().toISOString(), subject_id: g.subject_id });
+    if (weekly) ins.mutate({ title: g.title, kind: "registro", starts_at: new Date().toISOString(), subject_id: g.subject_id });
     else up.mutate({ id: g.id, done: done + 1 });
   }
 

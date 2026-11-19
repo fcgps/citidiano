@@ -15,7 +15,8 @@ export const Route = createFileRoute("/_authenticated/painel")({
 function Painel() {
   const navigate = useNavigate();
   const { data: assessments = [] } = useTable("assessments");
-  const { data: events = [] } = useTable("events");
+  const { data: allEvents = [] } = useTable("events");
+  const events = allEvents.filter((e) => e.kind !== "registro"); // registros das metas ("+") não aparecem
   const { data: subjects = [] } = useTable("subjects");
   const { data: goals = [] } = useTable("goals");
   const today = startOfDay(new Date());
@@ -30,7 +31,7 @@ function Painel() {
   const eventsWeek = events.filter((e) => isWithinInterval(parseISO(e.starts_at), week)).length;
   // Meta semanal: conta os registros desta semana na agenda (mesmo critério do cartão da meta)
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }), weekEnd = addDays(weekStart, 7);
-  const doneThisWeek = (title: string) => events.filter((e) => e.title === title && (e.kind === "treino" || e.kind === "estudo" || e.kind === "outro") && parseISO(e.starts_at) >= weekStart && parseISO(e.starts_at) < weekEnd).length;
+  const doneThisWeek = (title: string) => allEvents.filter((e) => e.kind === "registro" && e.title === title && parseISO(e.starts_at) >= weekStart && parseISO(e.starts_at) < weekEnd).length;
   const goalsDone = goals.filter((g) => (g.kind === "weekly" ? doneThisWeek(g.title) >= (g.times_per_week ?? 1) : Number(g.done) >= Number(g.target_hours ?? 1))).length;
 
   return (
