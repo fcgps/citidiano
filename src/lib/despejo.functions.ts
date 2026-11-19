@@ -16,11 +16,11 @@ const FALLBACK_MODEL = "gemini-3.5-flash-lite";
 // estar livre quando o principal está congestionado.
 const TOTAL_MS = 45_000;
 
-async function callGemini(key: string, body: unknown, firstMs = 20_000): Promise<Response> {
+async function callGemini(key: string, body: unknown, firstMs = 20_000, totalMs = TOTAL_MS): Promise<Response> {
   const started = Date.now();
   const timeout = () => new Response(JSON.stringify({ error: "timeout" }), { status: 504 });
   const attempt = async (model: string, maxMs: number) => {
-    const left = Math.min(maxMs, TOTAL_MS - (Date.now() - started));
+    const left = Math.min(maxMs, totalMs - (Date.now() - started));
     if (left < 3_000) return timeout();
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), left);
@@ -42,7 +42,7 @@ async function callGemini(key: string, body: unknown, firstMs = 20_000): Promise
   const first = await attempt(MODEL, firstMs);
   if (!transient(first)) return first;
   console.warn("Gemini principal falhou", first.status, "→ usando modelo reserva");
-  const alt = await attempt(FALLBACK_MODEL, TOTAL_MS);
+  const alt = await attempt(FALLBACK_MODEL, totalMs);
   return alt.status === 404 ? first : alt;
 }
 
@@ -138,6 +138,7 @@ Formato:
   }
 }
 Regras: datas sem ano assumem o semestre atual (ano de hoje; se o mês já passou muito e o documento parece do próximo semestre, use o ano coerente). Use null para o que não estiver no documento — nunca invente. Se a mesma avaliação aparecer com datas diferentes, preencha "conflict" com as opções e coloque em "date" a mais provável. Assuntos cobrados em "topics" como texto curto.
+No cronograma, liste TODAS as atividades avaliativas e entregas, uma por item, mesmo quando aparecem misturadas no texto do conteúdo de uma aula (ex.: "Mudança de Base / Mini-Prova II (Determinante...)" ou "Sistemas Lineares / Entrega Lista I"): provas e avaliações ("prova"), mini-provas ("mini-prova"), listas de exercícios, APS, trabalhos e projetos com entrega ("entrega", com o nome da lista no "name", ex.: "Entrega Lista II"), seminários ("seminario") e finais/segunda chamada ("extra"). Leia linha por linha e confira no fim se nenhuma ficou de fora. Não inclua aulas comuns, revisões, monitorias nem feriados como avaliação.
 Na grade: um item por bloco de horário (se a mesma aula ocupa dois horários seguidos, junte em um só bloco com início e fim). Inclua só o que se repete toda semana (aulas, treinos, reuniões fixas, atividades da empresa júnior); tarefas pontuais como "terminar X", "começar Y" ou "entrega de Z" vão para "ignored". Use kind "aula" para disciplinas, "citi" para empresa júnior/CITi, "treino" para academia e esportes, "outro" para o resto. Use kind "extra" para provas finais, segunda chamada, reposição e exame final (na UFPE, "Exercício Escolar Final" ou "EE Final" também é final): elas só acontecem para quem precisa.`;
 }
 
@@ -189,8 +190,9 @@ export const analyzeDump = createServerFn({ method: "POST" })
           filePart,
           { text: prompt(today, catalog) },
         ] }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.1, thinkingConfig: { thinkingLevel: "low" } },
-      });
+        // Ler um cronograma inteiro pede atenção: raciocínio "medium" e mais tempo antes do modelo reserva
+        generationConfig: { responseMimeType: "application/json", temperature: 0.1, thinkingConfig: { thinkingLevel: "medium" } },
+      }, 40_000, 70_000);
     } catch (e) {
       console.error(e);
       return fail("Não consegui falar com a IA. Tente de novo em instantes.");
